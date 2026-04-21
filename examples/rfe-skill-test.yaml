@@ -1,0 +1,98 @@
+---
+# Single agent job: run rfe.speedrun skill against RHAIRFE-1981
+#
+# This demonstrates how step_types capture the full K8s Job spec
+# (image, volumes, secrets, init containers, affinity) so that
+# individual steps only need to provide skill-specific parameters.
+
+entrypoint: main
+
+namespace: ai-pipeline
+
+vars:
+  issue: RHAIRFE-1981
+  model: opus
+  runner: cli
+  skill: "jwforres/rfe-creator@main:rfe.speedrun"
+
+step_types:
+  agent_job:
+    base: k8s_job
+    description: "Run a pipeline-agent skill as a K8s Job"
+    job:
+      image: pipeline-agent:latest
+      backoff_limit: 0
+      ttl_seconds: 86400
+      service_account: pipeline-dashboard
+      init_containers:
+        - name: update-ca-trust
+          image: alpine:3.19
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              if [ -f /tmp/ca-cert/ca.crt ]; then
+                cp /tmp/ca-cert/ca.crt /usr/local/share/ca-certificates/
+                update-ca-certificates
+                cp /etc/ssl/certs/ca-certificates.crt /shared/
+              else
+                cp /etc/ssl/certs/ca-certificates.crt /shared/
+              fi
+          volume_mounts:
+            - name: ca-cert
+              mount_path: /tmp/ca-cert
+            - name: shared-ca
+              mount_path: /shared
+      secrets:
+        - pipeline-secrets
+        - gcp-credentials
+      volumes:
+        - name: pipeline-issues
+          mount: /app/issues
+          pvc: pipeline-issues
+        - name: pipeline-workspace
+          mount: /app/workspace
+          pvc: pipeline-workspace
+        - name: pipeline-logs
+          mount: /app/logs
+          pvc: pipeline-logs
+        - name: pipeline-artifacts
+          mount: /app/artifacts
+          pvc: pipeline-artifacts
+        - name: pipeline-context
+          mount: /app/.context
+          pvc: pipeline-context
+        - name: shared-ca
+          mount: /shared
+          type: emptyDir
+        - name: ca-cert
+          type: configMap
+          config_map: internal-ca-cert
+      resources:
+        requests:
+          memory: 2Gi
+          cpu: 500m
+        limits:
+          memory: 8Gi
+          cpu: 2000m
+      affinity:
+        pod_affinity:
+          required:
+            match_labels:
+              app: pipeline-dashboard
+            topology_key: kubernetes.io/hostname
+
+workflows:
+  - name: main
+    steps:
+      - name: rfe-speedrun
+        type: agent_job
+        params:
+          command: ["/bin/bash"]
+          args:
+            - /app/scripts/run_skill.sh
+            - --skill
+            - "{{ skill }}"
+            - --issue
+            - "{{ issue }}"
+            - --model
+            - "{{ model }}"
