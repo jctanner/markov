@@ -1,9 +1,12 @@
 ---
-# Single agent job: run rfe.speedrun skill against RHAIRFE-1981
+# RFE pipeline: speedrun, review, submit, then create strategy
 #
-# This demonstrates how step_types capture the full K8s Job spec
-# (image, volumes, secrets, init containers, affinity) so that
-# individual steps only need to provide skill-specific parameters.
+# Flow:
+#   1. check_existing  — look for prior review artifact (skip speedrun if exists)
+#   2. rfe_speedrun    — run rfe.speedrun skill (creates RFE task + review)
+#   3. load_results    — load task and review artifacts from shared volume
+#   4. rfe_submit      — submit RFE if review passed
+#   5. strategy_create — create strategy doc if RFE was submitted
 
 entrypoint: main
 
@@ -13,8 +16,6 @@ vars:
   issue: RHAIRFE-1981
   model: opus
   runner: sdk
-  skill: rfe-speedrun          # key from pipeline-skills.yaml
-  skill_source: "jwforres/rfe-creator@main:rfe.speedrun"  # display name for reference
 
 step_types:
   agent_job:
@@ -108,6 +109,7 @@ workflows:
             optional: true
 
       # Only run the skill if no review artifact exists yet
+      # jwforres/rfe-creator@main:rfe.speedrun
       - name: rfe_speedrun
         type: agent_job
         when: "check_existing.artifacts.review == None"
@@ -116,7 +118,7 @@ workflows:
           args:
             - /app/scripts/run_skill.sh
             - --skill
-            - "{{ skill }}"
+            - rfe-speedrun
             - --issue
             - "{{ issue }}"
             - --model
@@ -135,18 +137,38 @@ workflows:
             format: markdown
             source: k8s
 
-      # Gate: only continue if the review passed
-      - name: quality_check
-        type: shell_exec
-        when: "load_results.artifacts.review.frontmatter.pass == true"
-        params:
-          command: >
-            echo 'RFE {{ issue }} passed review
-            (score: {{ load_results.artifacts.review.frontmatter.score }},
-            recommendation: {{ load_results.artifacts.review.frontmatter.recommendation }})'
-
-      # Submit the RFE if the review passed and recommendation is not reject
+      # Submit the RFE if the review passed, not rejected, and not already submitted
       - name: rfe_submit
+        type: agent_job
+        when: "load_results.artifacts.review.frontmatter.pass == true and load_results.artifacts.review.frontmatter.recommendation != 'reject' and load_results.artifacts.task.frontmatter.status != 'Submitted'"
+        params:
+          command: ["/bin/bash"]
+          args:
+            - /app/scripts/run_skill.sh
+            - --skill
+            - rfe-submit
+            - --issue
+            - "{{ issue }}"
+            - --model
+            - "{{ model }}"
+
+      # Add the strat-creator label to the Jira ticket before strategy creation
+      - name: add_strat_label
+        type: agent_job
+        when: "load_results.artifacts.review.frontmatter.pass == true and load_results.artifacts.review.frontmatter.recommendation != 'reject'"
+        params:
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              curl -sfk -X PUT \
+                -H "Content-Type: application/json" \
+                -u "$JIRA_USER:$JIRA_TOKEN" \
+                "$JIRA_SERVER/rest/api/2/issue/{{ issue }}" \
+                -d '{"update":{"labels":[{"add":"strat-creator-3.5"}]}}'
+
+      # Create strategy document after RFE is submitted
+      # ederign/strat-creator@main:strategy-create
+      - name: strategy_create
         type: agent_job
         when: "load_results.artifacts.review.frontmatter.pass == true and load_results.artifacts.review.frontmatter.recommendation != 'reject'"
         params:
@@ -154,7 +176,7 @@ workflows:
           args:
             - /app/scripts/run_skill.sh
             - --skill
-            - rfe-submit
+            - strategy-create
             - --issue
             - "{{ issue }}"
             - --model
