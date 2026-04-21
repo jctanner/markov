@@ -152,10 +152,20 @@ workflows:
             - --model
             - "{{ model }}"
 
+      # Check if a strategy ticket already exists for this RFE
+      - name: check_strat_exists
+        type: load_artifact
+        artifacts:
+          tickets:
+            path: "/app/artifacts/strat-tickets.md"
+            format: markdown_table
+            source: k8s
+            optional: true
+
       # Add the strat-creator label to the Jira ticket before strategy creation
       - name: add_strat_label
         type: agent_job
-        when: "load_results.artifacts.review.frontmatter.pass == true and load_results.artifacts.review.frontmatter.recommendation != 'reject'"
+        when: "load_results.artifacts.review.frontmatter.pass == true and load_results.artifacts.review.frontmatter.recommendation != 'reject' and (check_strat_exists.artifacts.tickets == None or not (issue in check_strat_exists.artifacts.tickets.rfe_source))"
         params:
           command: ["/bin/sh", "-c"]
           args:
@@ -170,7 +180,7 @@ workflows:
       # ederign/strat-creator@main:strategy-create
       - name: strategy_create
         type: agent_job
-        when: "load_results.artifacts.review.frontmatter.pass == true and load_results.artifacts.review.frontmatter.recommendation != 'reject'"
+        when: "load_results.artifacts.review.frontmatter.pass == true and load_results.artifacts.review.frontmatter.recommendation != 'reject' and (check_strat_exists.artifacts.tickets == None or not (issue in check_strat_exists.artifacts.tickets.rfe_source))"
         params:
           command: ["/bin/bash"]
           args:

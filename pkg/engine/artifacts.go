@@ -55,6 +55,9 @@ func (e *Engine) loadArtifacts(artifacts map[string]parser.Artifact, runCtx map[
 				"content":     content,
 			}
 
+		case "markdown_table":
+			result[name] = parseMarkdownTable(string(data))
+
 		default:
 			result[name] = string(data)
 		}
@@ -177,4 +180,70 @@ func parseMarkdown(raw string) (map[string]any, string) {
 	}
 
 	return frontmatter, strings.Join(contentLines, "\n")
+}
+
+func parseMarkdownTable(raw string) map[string]any {
+	var headers []string
+	var rows []map[string]any
+
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "|") {
+			continue
+		}
+
+		cells := splitTableRow(line)
+
+		if headers == nil {
+			for i, h := range cells {
+				cells[i] = toSnakeCase(h)
+			}
+			headers = cells
+			continue
+		}
+
+		if len(cells) > 0 && strings.Trim(cells[0], "- ") == "" {
+			continue
+		}
+
+		row := make(map[string]any)
+		for i, h := range headers {
+			if i < len(cells) {
+				row[h] = cells[i]
+			}
+		}
+		rows = append(rows, row)
+	}
+
+	result := map[string]any{
+		"rows": rows,
+	}
+	for _, h := range headers {
+		var vals []string
+		for _, r := range rows {
+			if v, ok := r[h].(string); ok {
+				vals = append(vals, v)
+			}
+		}
+		result[h] = strings.Join(vals, ",")
+	}
+
+	return result
+}
+
+func splitTableRow(line string) []string {
+	line = strings.Trim(line, "|")
+	parts := strings.Split(line, "|")
+	cells := make([]string, len(parts))
+	for i, p := range parts {
+		cells[i] = strings.TrimSpace(p)
+	}
+	return cells
+}
+
+func toSnakeCase(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.ReplaceAll(s, " ", "_")
+	s = strings.ReplaceAll(s, "-", "_")
+	return s
 }
