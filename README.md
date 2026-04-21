@@ -14,6 +14,26 @@ A Go-based YAML workflow engine for Kubernetes. Define workflows declaratively, 
 - **Checkpoint/resume** — SQLite state store; resume failed runs from the last successful step
 - **K8s native** — creates `batch/v1` Jobs directly (no Argo dependency)
 
+## How is this different from Ansible?
+
+The YAML borrows from Ansible's patterns — `when:`, `register:`, `for_each`,
+`forks`, template rendering — because those are good ideas. But the execution
+model is fundamentally different.
+
+| | Ansible | Markov |
+|---|---|---|
+| **Target** | Remote hosts via SSH | K8s Jobs in a namespace |
+| **Execution** | Runs modules on hosts | Creates K8s Jobs, polls for completion |
+| **State** | Stateless between runs | SQLite checkpoint/resume |
+| **Concurrency** | Forks across hosts | Forks across sub-workflows (fan-out) |
+| **Data flow** | Register + facts | Register + artifact loading from shared volumes |
+| **Scope** | General-purpose IT automation | Long-running AI/ML pipeline orchestration |
+
+Ansible SSHes into machines and runs Python modules. Markov creates K8s Jobs
+that run containers (e.g., agent pods with LLM skills) and waits for them to
+finish. Checkpoint/resume and artifact loading exist because these jobs run
+for minutes to hours, not seconds.
+
 ## Quick Start
 
 ```bash
@@ -87,26 +107,6 @@ workflows:
 | `--state-store path` | SQLite state file (default: `./markov-state.db`) |
 | `--verbose` | Show detailed execution output |
 | `--steps` | Show per-step status (with `status` command) |
-
-## How is this different from Ansible?
-
-The YAML borrows from Ansible's patterns — `when:`, `register:`, `for_each`,
-`forks`, template rendering — because those are good ideas. But the execution
-model is fundamentally different.
-
-| | Ansible | Markov |
-|---|---|---|
-| **Target** | Remote hosts via SSH | K8s Jobs in a namespace |
-| **Execution** | Runs modules on hosts | Creates K8s Jobs, polls for completion |
-| **State** | Stateless between runs | SQLite checkpoint/resume |
-| **Concurrency** | Forks across hosts | Forks across sub-workflows (fan-out) |
-| **Data flow** | Register + facts | Register + artifact loading from shared volumes |
-| **Scope** | General-purpose IT automation | Long-running AI/ML pipeline orchestration |
-
-Ansible SSHes into machines and runs Python modules. Markov creates K8s Jobs
-that run containers (e.g., agent pods with LLM skills) and waits for them to
-finish. Checkpoint/resume and artifact loading exist because these jobs run
-for minutes to hours, not seconds.
 
 ## Project Structure
 
