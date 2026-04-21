@@ -97,8 +97,20 @@ step_types:
 workflows:
   - name: main
     steps:
+      # Check if artifacts already exist from a previous run
+      - name: check_existing
+        type: load_artifact
+        artifacts:
+          review:
+            path: "/app/artifacts/rfe-reviews/{{ issue }}-review.md"
+            format: markdown
+            source: k8s
+            optional: true
+
+      # Only run the skill if no review artifact exists yet
       - name: rfe_speedrun
         type: agent_job
+        when: "check_existing.artifacts.review == None"
         params:
           command: ["/bin/bash"]
           args:
@@ -110,16 +122,18 @@ workflows:
             - --model
             - "{{ model }}"
 
-      # Load the artifacts the skill wrote to the shared volume
+      # Load the full set of artifacts
       - name: load_results
         type: load_artifact
         artifacts:
           task:
             path: "/app/artifacts/rfe-tasks/{{ issue }}.md"
             format: markdown
+            source: k8s
           review:
             path: "/app/artifacts/rfe-reviews/{{ issue }}-review.md"
             format: markdown
+            source: k8s
 
       # Gate: only continue if the review passed
       - name: quality_check
@@ -131,11 +145,17 @@ workflows:
             (score: {{ load_results.artifacts.review.frontmatter.score }},
             recommendation: {{ load_results.artifacts.review.frontmatter.recommendation }})'
 
-      # Skip if the recommendation is to reject
-      - name: next_steps
-        type: shell_exec
-        when: "load_results.artifacts.review.frontmatter.recommendation != 'reject'"
+      # Submit the RFE if the review passed and recommendation is not reject
+      - name: rfe_submit
+        type: agent_job
+        when: "load_results.artifacts.review.frontmatter.pass == true and load_results.artifacts.review.frontmatter.recommendation != 'reject'"
         params:
-          command: >
-            echo 'RFE {{ issue }} approved for next phase
-            (feasibility: {{ load_results.artifacts.review.frontmatter.feasibility }})'
+          command: ["/bin/bash"]
+          args:
+            - /app/scripts/run_skill.sh
+            - --skill
+            - rfe-submit
+            - --issue
+            - "{{ issue }}"
+            - --model
+            - "{{ model }}"

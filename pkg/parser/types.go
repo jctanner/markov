@@ -42,5 +42,6 @@ type Step struct {
 type Artifact struct {
 	Path     string `yaml:"path"`
 	Format   string `yaml:"format"`
+	Source   string `yaml:"source"`
 	Optional bool   `yaml:"optional"`
 }

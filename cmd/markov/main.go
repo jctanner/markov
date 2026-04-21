@@ -13,6 +13,7 @@ import (
 	"github.com/jctanner/markov/pkg/state"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -114,6 +115,11 @@ func runWorkflow(cmd *cobra.Command, args []string) error {
 
 	eng := engine.New(wfFile, store, executors)
 	eng.Verbose = flagVerbose
+
+	k8sClient, restCfg, err := getK8sClient()
+	if err == nil {
+		eng.SetK8sClient(k8sClient, restCfg)
+	}
 
 	ctx := context.Background()
 	runID, err := eng.Run(ctx, flagWorkflow, vars)
@@ -261,7 +267,7 @@ func buildExecutors(wf *parser.WorkflowFile) (map[string]executor.Executor, erro
 		namespace = "default"
 	}
 
-	k8sClient, err := getK8sClient()
+	k8sClient, _, err := getK8sClient()
 	if err != nil {
 		log.Printf("warning: k8s client unavailable: %v (k8s_job steps will fail)", err)
 	} else {
@@ -271,7 +277,7 @@ func buildExecutors(wf *parser.WorkflowFile) (map[string]executor.Executor, erro
 	return executors, nil
 }
 
-func getK8sClient() (kubernetes.Interface, error) {
+func getK8sClient() (kubernetes.Interface, *rest.Config, error) {
 	kubeconfig := flagKubeconfig
 	if kubeconfig == "" {
 		kubeconfig = os.Getenv("KUBECONFIG")
@@ -294,8 +300,12 @@ func getK8sClient() (kubernetes.Interface, error) {
 
 	restConfig, err := (*config).ClientConfig()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return kubernetes.NewForConfig(restConfig)
+	client, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+	return client, restConfig, nil
 }

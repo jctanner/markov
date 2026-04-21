@@ -14,15 +14,19 @@ import (
 	"github.com/jctanner/markov/pkg/parser"
 	"github.com/jctanner/markov/pkg/state"
 	"github.com/jctanner/markov/pkg/template"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 type Engine struct {
-	file      *parser.WorkflowFile
-	store     state.Store
-	tmpl      *template.Engine
-	executors map[string]executor.Executor
-	forks     int
-	Verbose   bool
+	file       *parser.WorkflowFile
+	store      state.Store
+	tmpl       *template.Engine
+	executors  map[string]executor.Executor
+	k8s        kubernetes.Interface
+	restConfig *rest.Config
+	forks      int
+	Verbose    bool
 }
 
 func New(file *parser.WorkflowFile, store state.Store, executors map[string]executor.Executor) *Engine {
@@ -37,6 +41,11 @@ func New(file *parser.WorkflowFile, store state.Store, executors map[string]exec
 		executors: executors,
 		forks:     forks,
 	}
+}
+
+func (e *Engine) SetK8sClient(client kubernetes.Interface, cfg *rest.Config) {
+	e.k8s = client
+	e.restConfig = cfg
 }
 
 func (e *Engine) verbose(format string, args ...any) {
