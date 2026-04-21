@@ -100,8 +100,9 @@ func (e *K8sJob) buildJob(params map[string]any) (*batchv1.Job, error) {
 		ImagePullPolicy: pullPolicy,
 		Command:         command,
 		Args:            args,
-		VolumeMounts:    volumeMounts,
+		Env:             buildEnvVars(params),
 		EnvFrom:         envFrom,
+		VolumeMounts:    volumeMounts,
 		Resources:       resources,
 	}
 
@@ -169,6 +170,13 @@ func buildVolumes(params map[string]any) ([]corev1.Volume, []corev1.VolumeMount)
 					LocalObjectReference: corev1.LocalObjectReference{Name: cmName},
 				},
 			}
+		case v["secret"] != nil:
+			secretName, _ := v["secret"].(string)
+			vol.VolumeSource = corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: secretName,
+				},
+			}
 		default:
 			vol.VolumeSource = corev1.VolumeSource{
 				EmptyDir: &corev1.EmptyDirVolumeSource{},
@@ -178,14 +186,32 @@ func buildVolumes(params map[string]any) ([]corev1.Volume, []corev1.VolumeMount)
 		volumes = append(volumes, vol)
 
 		if mountPath, ok := v["mount"].(string); ok && mountPath != "" {
+			readOnly, _ := v["read_only"].(bool)
 			mounts = append(mounts, corev1.VolumeMount{
 				Name:      name,
 				MountPath: mountPath,
+				ReadOnly:  readOnly,
 			})
 		}
 	}
 
 	return volumes, mounts
+}
+
+func buildEnvVars(params map[string]any) []corev1.EnvVar {
+	envMap, ok := params["env"].(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	var envVars []corev1.EnvVar
+	for k, v := range envMap {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  k,
+			Value: fmt.Sprintf("%v", v),
+		})
+	}
+	return envVars
 }
 
 func buildEnvFrom(params map[string]any) []corev1.EnvFromSource {

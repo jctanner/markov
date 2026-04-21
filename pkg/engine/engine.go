@@ -113,10 +113,16 @@ func (e *Engine) Resume(ctx context.Context, runID string) error {
 		return err
 	}
 	for _, s := range steps {
-		if s.Status == state.StepCompleted && s.OutputJSON != "" {
-			var output map[string]any
-			json.Unmarshal([]byte(s.OutputJSON), &output)
-			runCtx[s.StepName] = output
+		if s.Status == state.StepCompleted {
+			if s.ArtifactsJSON != "" {
+				var stepData map[string]any
+				json.Unmarshal([]byte(s.ArtifactsJSON), &stepData)
+				runCtx[s.StepName] = stepData
+			} else if s.OutputJSON != "" {
+				var output map[string]any
+				json.Unmarshal([]byte(s.OutputJSON), &output)
+				runCtx[s.StepName] = output
+			}
 		}
 	}
 
@@ -191,6 +197,33 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 	}
 
 	now := time.Now()
+
+	base, mergedParams := e.file.ResolveStepType(&step)
+
+	if base == "load_artifact" {
+		log.Printf("[run:%s] loading artifacts for step %q", runID, step.Name)
+		if len(step.Artifacts) == 0 {
+			return e.failStep(ctx, runID, workflowName, step.Name, fmt.Errorf("load_artifact step has no artifacts defined"))
+		}
+		artifacts, err := e.loadArtifacts(step.Artifacts, runCtx)
+		if err != nil {
+			return e.failStep(ctx, runID, workflowName, step.Name, fmt.Errorf("loading artifacts: %w", err))
+		}
+		runCtx[step.Name] = map[string]any{"artifacts": artifacts}
+		e.verbose("[run:%s]   loaded %d artifact(s)", runID, len(artifacts))
+		completed := time.Now()
+		e.store.SaveStep(ctx, &state.StepResult{
+			RunID:        runID,
+			WorkflowName: workflowName,
+			StepName:     step.Name,
+			Status:       state.StepCompleted,
+			StartedAt:    &now,
+			CompletedAt:  &completed,
+		})
+		log.Printf("[run:%s] step %q completed", runID, step.Name)
+		return nil
+	}
+
 	e.store.SaveStep(ctx, &state.StepResult{
 		RunID:        runID,
 		WorkflowName: workflowName,
@@ -200,8 +233,6 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 	})
 
 	log.Printf("[run:%s] executing step %q (type: %s)", runID, step.Name, step.Type)
-
-	base, mergedParams := e.file.ResolveStepType(&step)
 	e.verbose("[run:%s]   resolved type: %s -> %s", runID, step.Type, base)
 
 	renderedParams, err := e.tmpl.RenderMap(mergedParams, runCtx)
@@ -254,16 +285,37 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 		e.verbose("[run:%s]   registered %q: %v", runID, step.Register, output)
 	}
 
+	if len(step.Artifacts) > 0 {
+		artifacts, err := e.loadArtifacts(step.Artifacts, runCtx)
+		if err != nil {
+			return e.failStep(ctx, runID, workflowName, step.Name, fmt.Errorf("loading artifacts: %w", err))
+		}
+		stepData := map[string]any{"artifacts": artifacts}
+		if output != nil {
+			for k, v := range output {
+				stepData[k] = v
+			}
+		}
+		runCtx[step.Name] = stepData
+		e.verbose("[run:%s]   loaded %d artifact(s) for %q", runID, len(artifacts), step.Name)
+	}
+
 	outputJSON, _ := json.Marshal(output)
+	artifactsJSON := ""
+	if stepData, ok := runCtx[step.Name]; ok {
+		aj, _ := json.Marshal(stepData)
+		artifactsJSON = string(aj)
+	}
 	completed := time.Now()
 	e.store.SaveStep(ctx, &state.StepResult{
-		RunID:        runID,
-		WorkflowName: workflowName,
-		StepName:     step.Name,
-		Status:       state.StepCompleted,
-		OutputJSON:   string(outputJSON),
-		StartedAt:    &now,
-		CompletedAt:  &completed,
+		RunID:         runID,
+		WorkflowName:  workflowName,
+		StepName:      step.Name,
+		Status:        state.StepCompleted,
+		OutputJSON:    string(outputJSON),
+		ArtifactsJSON: artifactsJSON,
+		StartedAt:     &now,
+		CompletedAt:   &completed,
 	})
 
 	log.Printf("[run:%s] step %q completed", runID, step.Name)

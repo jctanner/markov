@@ -90,11 +90,12 @@ func validateSteps(wf *WorkflowFile, workflowName string, steps []Step) error {
 }
 
 var primitives = map[string]bool{
-	"k8s_job":      true,
-	"http_request": true,
-	"llm_invoke":   true,
-	"shell_exec":   true,
-	"gate":         true,
+	"k8s_job":       true,
+	"http_request":  true,
+	"llm_invoke":    true,
+	"shell_exec":    true,
+	"gate":          true,
+	"load_artifact": true,
 }
 
 func resolveType(wf *WorkflowFile, typeName string) error {

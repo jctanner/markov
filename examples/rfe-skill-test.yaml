@@ -12,7 +12,7 @@ namespace: ai-pipeline
 vars:
   issue: RHAIRFE-1981
   model: opus
-  runner: cli
+  runner: sdk
   skill: "jwforres/rfe-creator@main:rfe.speedrun"
 
 step_types:
@@ -42,9 +42,11 @@ step_types:
               mount_path: /tmp/ca-cert
             - name: shared-ca
               mount_path: /shared
+      env:
+        GOOGLE_APPLICATION_CREDENTIALS: /home/pipelineagent/.config/gcloud/credentials.json
+        MLFLOW_TRACKING_URI: http://mlflow.ai-pipeline.svc.cluster.local:5000
       secrets:
         - pipeline-secrets
-        - gcp-credentials
       volumes:
         - name: pipeline-issues
           mount: /app/issues
@@ -61,9 +63,14 @@ step_types:
         - name: pipeline-context
           mount: /app/.context
           pvc: pipeline-context
+        - name: gcp-credentials
+          mount: /home/pipelineagent/.config/gcloud
+          secret: gcp-credentials
+          read_only: true
         - name: shared-ca
           mount: /shared
           type: emptyDir
+          read_only: true
         - name: ca-cert
           type: configMap
           config_map: internal-ca-cert
@@ -84,7 +91,7 @@ step_types:
 workflows:
   - name: main
     steps:
-      - name: rfe-speedrun
+      - name: rfe_speedrun
         type: agent_job
         params:
           command: ["/bin/bash"]
@@ -96,3 +103,33 @@ workflows:
             - "{{ issue }}"
             - --model
             - "{{ model }}"
+
+      # Load the artifacts the skill wrote to the shared volume
+      - name: load_results
+        type: load_artifact
+        artifacts:
+          task:
+            path: "/app/artifacts/rfe-tasks/{{ issue }}.md"
+            format: markdown
+          review:
+            path: "/app/artifacts/rfe-reviews/{{ issue }}-review.md"
+            format: markdown
+
+      # Gate: only continue if the review passed
+      - name: quality_check
+        type: shell_exec
+        when: "load_results.artifacts.review.frontmatter.pass == true"
+        params:
+          command: >
+            echo 'RFE {{ issue }} passed review
+            (score: {{ load_results.artifacts.review.frontmatter.score }},
+            recommendation: {{ load_results.artifacts.review.frontmatter.recommendation }})'
+
+      # Skip if the recommendation is to reject
+      - name: next_steps
+        type: shell_exec
+        when: "load_results.artifacts.review.frontmatter.recommendation != 'reject'"
+        params:
+          command: >
+            echo 'RFE {{ issue }} approved for next phase
+            (feasibility: {{ load_results.artifacts.review.frontmatter.feasibility }})'
