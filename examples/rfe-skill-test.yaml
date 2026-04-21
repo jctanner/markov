@@ -13,7 +13,8 @@ vars:
   issue: RHAIRFE-1981
   model: opus
   runner: sdk
-  skill: "jwforres/rfe-creator@main:rfe.speedrun"
+  skill: rfe-speedrun          # key from pipeline-skills.yaml
+  skill_source: "jwforres/rfe-creator@main:rfe.speedrun"  # display name for reference
 
 step_types:
   agent_job:
@@ -30,12 +31,17 @@ step_types:
           command: ["/bin/sh", "-c"]
           args:
             - |
+              set -ex
+              apk add --no-cache ca-certificates
               if [ -f /tmp/ca-cert/ca.crt ]; then
-                cp /tmp/ca-cert/ca.crt /usr/local/share/ca-certificates/
+                mkdir -p /usr/local/share/ca-certificates
+                cp /tmp/ca-cert/ca.crt /usr/local/share/ca-certificates/internal-ca.crt
                 update-ca-certificates
-                cp /etc/ssl/certs/ca-certificates.crt /shared/
+                cp /etc/ssl/certs/ca-certificates.crt /shared/ca-certificates.crt
+                echo "CA trust store updated successfully"
               else
-                cp /etc/ssl/certs/ca-certificates.crt /shared/
+                echo "No CA cert found, skipping"
+                cp /etc/ssl/certs/ca-certificates.crt /shared/ca-certificates.crt || touch /shared/ca-certificates.crt
               fi
           volume_mounts:
             - name: ca-cert
