@@ -3,10 +3,10 @@
 ## Overview
 
 Markov is a Go-based workflow engine that reads declarative YAML workflow
-files and executes steps as Kubernetes Jobs, HTTP requests, LLM
-invocations, or shell commands. The engine runs as a controller (K8s Job
-or Deployment) that creates child K8s Jobs for heavy steps and executes
-lightweight steps in-process.
+files and executes steps as Kubernetes Jobs, HTTP requests, or shell
+commands. The engine runs as a controller (K8s Job or Deployment) that
+creates child K8s Jobs for heavy steps and executes lightweight steps
+in-process.
 
 ## MVP Scope
 
@@ -14,7 +14,7 @@ lightweight steps in-process.
 
 - YAML parsing with multiple workflows per file
 - User-defined step types composed from engine primitives
-- Engine primitives: `k8s_job`, `http_request`, `llm_invoke`, `shell_exec`
+- Engine primitives: `k8s_job`, `http_request`, `shell_exec`, `load_artifact`
 - `for_each` fan-out with concurrency control (`forks`)
 - Sub-workflow invocation (`workflow:` on a step)
 - Artifact loading from files (YAML, markdown frontmatter)
@@ -22,7 +22,7 @@ lightweight steps in-process.
 - `register:` variable capture and template interpolation
 - Checkpoint/resume via state store (SQLite for dev, PostgreSQL for prod)
 - Error handling: fail-fast with checkpointed state
-- CLI: `run`, `resume`, `status`, `validate`
+- CLI: `run`, `resume`, `status`, `list`, `validate`
 - Pongo2 for template rendering and expression evaluation
 
 ### Post-MVP
@@ -40,6 +40,7 @@ lightweight steps in-process.
 - Argo Workflow export adapter
 - TMS (Truth Maintenance System) propagation
 - Multi-tenancy
+- `llm_invoke` primitive (direct LLM API calls from the engine process)
 - Dry-run with mocked step outputs
 
 ## Architecture
