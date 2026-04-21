@@ -1,0 +1,221 @@
+---
+# Example: Batch RFE pipeline with sub-workflows
+#
+# Demonstrates:
+#   - Multiple workflows in a single file
+#   - Fan-out via for_each + workflow: to spawn sub-workflows per item
+#   - Sub-workflow runs independently with its own steps, gates, conditions
+#   - Parent waits for all sub-workflows to complete (fan-in)
+#   - forks controls global concurrency, per-step concurrency can override
+
+entrypoint: batch-rfe-pipeline
+
+namespace: markov-test
+
+forks: 5
+
+vars:
+  project: RHAISTRAT
+  model: opus
+  runner: cli
+  jira_server: "https://issues.redhat.com"
+
+step_types:
+
+  agent_skill:
+    base: k8s_job
+    description: "Run a Claude skill in a pipeline-agent container"
+    defaults:
+      model: "{{ model }}"
+      runner: "{{ runner }}"
+    job:
+      image: pipeline-agent:latest
+      command: ["/bin/bash", "/app/scripts/run_skill.sh"]
+      args:
+        - "--skill"
+        - "{{ skill }}"
+        - "--issue"
+        - "{{ issue }}"
+        - "--model"
+        - "{{ model }}"
+        - "--runner"
+        - "{{ runner }}"
+      namespace: markov-test
+      service_account: pipeline-dashboard
+      ttl_seconds: 86400
+      backoff_limit: 0
+      resources:
+        requests: { memory: 2Gi, cpu: 500m }
+        limits: { memory: 8Gi, cpu: "2000m" }
+      secrets:
+        - pipeline-secrets
+        - gcp-credentials
+      volumes:
+        - name: pipeline-issues
+          mount: /app/issues
+        - name: pipeline-workspace
+          mount: /app/workspace
+        - name: pipeline-logs
+          mount: /app/logs
+        - name: pipeline-artifacts
+          mount: /app/artifacts
+        - name: pipeline-context
+          mount: /app/.context
+      affinity:
+        match_labels:
+          app: pipeline-dashboard
+        topology_key: kubernetes.io/hostname
+
+  jira_api:
+    base: http_request
+    description: "Call the Jira REST API"
+    params:
+      base_url: "{{ jira_server }}/rest/api/2"
+      auth: jira
+
+# ====================================================================
+# Workflows
+# ====================================================================
+workflows:
+
+  # ------------------------------------------------------------------
+  # Entry point: fetch issues, fan out to per-issue sub-workflows
+  # ------------------------------------------------------------------
+  - name: batch-rfe-pipeline
+    description: "Fetch all new RFEs and process each through the full pipeline"
+
+    steps:
+
+      - name: fetch-issues
+        type: jira_api
+        params:
+          path: "/search?jql=project={{ project }}+AND+status=New&maxResults=100"
+          method: GET
+        register: issue_list
+
+      - name: process-issues
+        for_each: "issue_list.body.issues"
+        as: ticket
+        workflow: per-issue-pipeline
+        vars:
+          issue: "{{ ticket.key }}"
+          summary: "{{ ticket.fields.summary }}"
+          description: "{{ ticket.fields.description }}"
+        register: issue_results
+
+      - name: portfolio-report
+        type: llm_invoke
+        params:
+          model: "{{ model }}"
+          prompt: |
+            Generate an executive portfolio report summarizing
+            {{ issue_results | length }} processed RFEs.
+            Data: {{ issue_results | to_yaml }}
+        register: report
+
+      - name: save-report
+        type: shell_exec
+        params:
+          command: |
+            cat > /app/artifacts/{{ project }}/portfolio-report.md << 'REPORT'
+            {{ report.output }}
+            REPORT
+
+  # ------------------------------------------------------------------
+  # Per-issue pipeline: runs independently for each issue
+  # ------------------------------------------------------------------
+  - name: per-issue-pipeline
+    description: "Full RFE pipeline for a single issue"
+
+    vars:
+      issue: null          # required — passed by parent
+      summary: null        # required — passed by parent
+      description: null    # required — passed by parent
+
+    steps:
+
+      - name: classify
+        type: llm_invoke
+        params:
+          model: sonnet
+          prompt: |
+            Classify this Jira issue. Return YAML:
+              type: feature-request | bug | tech-debt | question
+              complexity: low | medium | high
+            Key: {{ issue }}
+            Summary: {{ summary }}
+            Description: {{ description }}
+        register: classification
+
+      - name: skip-if-trivial
+        type: gate
+        when: "classification.result.complexity != 'low'"
+        params:
+          message: "{{ issue }} is low complexity — skipping."
+          on_fail: halt
+
+      - name: rfe-analysis
+        type: agent_skill
+        params:
+          skill: rfe-creator
+          issue: "{{ issue }}"
+        artifacts:
+          result:
+            path: "/app/artifacts/{{ issue }}/rfe-analysis/result.yaml"
+            format: yaml
+
+      - name: analysis-gate
+        type: gate
+        when: "rfe-analysis.artifacts.result.recommendation != 'reject'"
+        params:
+          message: |
+            Analysis for {{ issue }}:
+            Confidence: {{ rfe-analysis.artifacts.result.confidence }}
+            Recommendation: {{ rfe-analysis.artifacts.result.recommendation }}
+          on_fail: halt
+
+      - name: create-strategy
+        type: agent_skill
+        params:
+          skill: strategy-create
+          issue: "{{ issue }}"
+        artifacts:
+          strategy:
+            path: "/app/artifacts/{{ issue }}/strategy/strategy.yaml"
+            format: yaml
+          document:
+            path: "/app/artifacts/{{ issue }}/strategy/strategy.md"
+            format: markdown
+
+      - name: strategy-review
+        type: gate
+        params:
+          message: |
+            Review strategy for {{ issue }} before refinement.
+            Effort: {{ create-strategy.artifacts.strategy.estimated_effort }}
+            Risks: {{ create-strategy.artifacts.strategy.risks }}
+          timeout: 7200
+
+      - name: refine-strategy
+        type: agent_skill
+        params:
+          skill: strategy-refine
+          issue: "{{ issue }}"
+          model: "{{ rfe-analysis.artifacts.result.complexity == 'high' | ternary('opus', 'sonnet') }}"
+        artifacts:
+          result:
+            path: "/app/artifacts/{{ issue }}/refinement/result.yaml"
+            format: yaml
+
+      - name: security-review
+        type: agent_skill
+        params:
+          skill: strat-security-review
+          issue: "{{ issue }}"
+
+      - name: log-completion
+        type: shell_exec
+        params:
+          command: |
+            echo '{"issue":"{{ issue }}","status":"complete","ts":"{{ _now }}"}' \
+              >> /app/logs/pipeline-completions.jsonl

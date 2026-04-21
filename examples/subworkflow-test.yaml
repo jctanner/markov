@@ -1,0 +1,40 @@
+---
+entrypoint: main
+
+forks: 2
+
+vars:
+  items: ["alpha", "bravo", "charlie", "skip-me"]
+
+workflows:
+  - name: main
+    steps:
+      - name: fan-out
+        for_each: "items"
+        as: item
+        workflow: per-item
+        vars:
+          value: "{{ item }}"
+        register: results
+
+      - name: done
+        type: shell_exec
+        params:
+          command: "echo 'all sub-workflows complete'"
+
+  - name: per-item
+    vars:
+      value: null
+
+    steps:
+      - name: step-one
+        type: shell_exec
+        params:
+          command: "echo 'processing: {{ value }}'"
+        register: step_one
+
+      - name: step-two
+        type: shell_exec
+        when: "value != 'skip-me'"
+        params:
+          command: "echo 'continued: {{ value }}'"

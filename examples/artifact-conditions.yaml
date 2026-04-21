@@ -1,0 +1,184 @@
+---
+# Example: Using file artifacts as conditions
+#
+# Agent jobs write markdown/yaml files to the artifacts volume.
+# The engine can load those files after a step completes and
+# make their contents available as structured variables for
+# conditions on subsequent steps.
+#
+# Two patterns shown here:
+#   1. YAML artifacts — parsed into dicts, fields used directly in `when:`
+#   2. Markdown artifacts — frontmatter extracted, or existence/content checked
+
+workflow:
+  name: artifact-driven-pipeline
+  description: "Demonstrates file-based artifact conditions"
+
+  vars:
+    issue: RHAISTRAT-42
+    model: opus
+    runner: cli
+
+  agent_defaults:
+    image: pipeline-agent:latest
+    namespace: markov-test
+    secrets:
+      - pipeline-secrets
+    volumes:
+      - name: pipeline-artifacts
+        mount: /app/artifacts
+
+  steps:
+
+    # ---------------------------------------------------------------
+    # Step 1: Agent job writes a YAML artifact as its output
+    # ---------------------------------------------------------------
+    # The skill writes a file like:
+    #   /app/artifacts/RHAISTRAT-42/rfe-analysis/result.yaml
+    #
+    # containing:
+    #   status: complete
+    #   confidence: 0.87
+    #   category: feature-request
+    #   complexity: high
+    #   risks:
+    #     - "Requires new API surface"
+    #     - "Cross-team dependency on auth service"
+    #   recommendation: proceed
+    #
+    - name: rfe-analysis
+      type: agent_job
+      skill: rfe-creator
+      params:
+        issue: "{{ issue }}"
+        model: "{{ model }}"
+        runner: "{{ runner }}"
+
+      # `artifacts` tells the engine which files to load after the
+      # job completes. Each entry becomes a variable.
+      artifacts:
+        result:
+          path: "/app/artifacts/{{ issue }}/rfe-analysis/result.yaml"
+          format: yaml
+
+    # ---------------------------------------------------------------
+    # Condition: only proceed if confidence is high enough
+    # ---------------------------------------------------------------
+    - name: confidence-check
+      type: gate
+      when: "rfe-analysis.artifacts.result.confidence >= 0.7"
+      params:
+        message: |
+          RFE analysis confidence: {{ rfe-analysis.artifacts.result.confidence }}
+          Category: {{ rfe-analysis.artifacts.result.category }}
+          Risks: {{ rfe-analysis.artifacts.result.risks }}
+        auto_approve: true
+
+    # ---------------------------------------------------------------
+    # Condition: skip strategy if recommendation is "reject"
+    # ---------------------------------------------------------------
+    - name: create-strategy
+      type: agent_job
+      skill: strategy-create
+      when: "rfe-analysis.artifacts.result.recommendation != 'reject'"
+      params:
+        issue: "{{ issue }}"
+        model: "{{ model }}"
+        runner: "{{ runner }}"
+      artifacts:
+        strategy:
+          path: "/app/artifacts/{{ issue }}/strategy/strategy.yaml"
+          format: yaml
+        document:
+          path: "/app/artifacts/{{ issue }}/strategy/strategy.md"
+          format: markdown
+
+    # ---------------------------------------------------------------
+    # Condition on markdown: check frontmatter fields
+    # ---------------------------------------------------------------
+    # The strategy.md file has YAML frontmatter:
+    #   ---
+    #   status: draft
+    #   reviewers: [alice, bob]
+    #   approval: pending
+    #   estimated_effort: 3-sprints
+    #   ---
+    #   # Strategy: Implement Widget API
+    #   ...
+    #
+    - name: needs-review
+      type: gate
+      when: "create-strategy.artifacts.document.frontmatter.approval == 'pending'"
+      params:
+        message: |
+          Strategy for {{ issue }} is ready for review.
+          Effort estimate: {{ create-strategy.artifacts.document.frontmatter.estimated_effort }}
+          Reviewers: {{ create-strategy.artifacts.document.frontmatter.reviewers }}
+        timeout: 7200
+
+    # ---------------------------------------------------------------
+    # Condition on structured YAML: branch on complexity
+    # ---------------------------------------------------------------
+    - name: refinement-routing
+      rules:
+        - name: high-complexity
+          when: "rfe-analysis.artifacts.result.complexity == 'high'"
+          steps:
+            - name: deep-refinement
+              type: agent_job
+              skill: strategy-refine
+              params:
+                issue: "{{ issue }}"
+                model: opus
+                runner: "{{ runner }}"
+
+        - name: medium-complexity
+          when: "rfe-analysis.artifacts.result.complexity == 'medium'"
+          steps:
+            - name: light-refinement
+              type: agent_job
+              skill: strategy-refine
+              params:
+                issue: "{{ issue }}"
+                model: sonnet
+                runner: "{{ runner }}"
+
+        - name: low-complexity
+          when: "rfe-analysis.artifacts.result.complexity == 'low'"
+          steps:
+            - name: auto-approve
+              type: shell_exec
+              params:
+                command: "echo 'Low complexity — auto-approved' >> /app/logs/{{ issue }}.log"
+
+    # ---------------------------------------------------------------
+    # Condition: check if a file exists at all
+    # ---------------------------------------------------------------
+    - name: check-for-blockers
+      type: load_artifact
+      artifacts:
+        blockers:
+          path: "/app/artifacts/{{ issue }}/blockers.yaml"
+          format: yaml
+          optional: true    # don't fail if missing — just set to null
+
+    - name: blocker-gate
+      when: "check-for-blockers.artifacts.blockers != null and check-for-blockers.artifacts.blockers.blocked == true"
+      type: gate
+      params:
+        message: |
+          BLOCKED: {{ check-for-blockers.artifacts.blockers.reason }}
+          Blocking issues: {{ check-for-blockers.artifacts.blockers.blocking_issues }}
+        auto_approve: false
+
+    # ---------------------------------------------------------------
+    # Condition: count items in a YAML list
+    # ---------------------------------------------------------------
+    - name: risk-escalation
+      when: "rfe-analysis.artifacts.result.risks | length > 2"
+      type: gate
+      params:
+        message: |
+          {{ rfe-analysis.artifacts.result.risks | length }} risks identified.
+          Escalating for senior review.
+        auto_approve: false

@@ -1,0 +1,117 @@
+---
+# End-to-end K8s test: conditionals, fan-out, and sub-workflows
+#
+# Flow:
+#   main workflow
+#     1. k8s-hello         — always runs
+#     2. k8s-second        — runs (run_second: true)
+#     3. k8s-third         — skipped (run_third: false)
+#     4. fan-out           — spawns per-item workflow for each item (concurrency: 2)
+#     5. wrap-up           — invokes final-workflow after all fan-outs complete
+#
+#   per-item workflow (runs 3x in parallel, 2 at a time)
+#     1. process           — always runs
+#     2. finish            — skipped for "bravo"
+#
+#   final-workflow (runs once, after fan-out completes)
+#     1. summary           — reports total processed
+#     2. cleanup           — always runs
+
+entrypoint: main
+
+namespace: markov-test
+
+forks: 2
+
+vars:
+  greeting: "hello from markov"
+  run_second: true
+  run_third: false
+  items: ["alpha", "bravo", "charlie"]
+
+step_types:
+  echo_job:
+    base: k8s_job
+    description: "Run a simple echo in a K8s Job"
+    job:
+      image: alpine:3.19
+      command: ["/bin/sh", "-c"]
+      ttl_seconds: 300
+      backoff_limit: 0
+
+workflows:
+  - name: main
+    steps:
+      - name: k8s-hello
+        type: echo_job
+        params:
+          args: ["echo '{{ greeting }}' && sleep 2"]
+
+      # Conditional: runs because run_second is true
+      - name: k8s-second
+        type: echo_job
+        when: "run_second"
+        params:
+          args: ["echo 'second step ran' && sleep 2"]
+
+      # Conditional: skipped because run_third is false
+      - name: k8s-third
+        type: echo_job
+        when: "run_third"
+        params:
+          args: ["echo 'third step should NOT run' && sleep 2"]
+
+      # Fan-out: spawns per-item workflow for each item in the list.
+      # Concurrency is inherited from top-level forks (2), so only
+      # 2 sub-workflows run at a time. This step blocks until all
+      # sub-workflows complete.
+      - name: fan-out
+        for_each: "items"
+        as: item
+        workflow: per-item
+        vars:
+          value: "{{ item }}"
+        register: results
+
+      # Sub-workflow invocation (no for_each): runs final-workflow
+      # once, after the fan-out step above has fully completed.
+      - name: wrap-up
+        workflow: final-workflow
+        vars:
+          total: "{{ results | length }}"
+
+  # Per-item workflow: runs independently for each item in the fan-out.
+  # Each instance gets its own run ID and K8s Jobs.
+  - name: per-item
+    vars:
+      value: null    # required — passed by parent
+
+    steps:
+      - name: process
+        type: echo_job
+        params:
+          args: ["echo 'processing: {{ value }}' && sleep 3"]
+
+      # Conditional within sub-workflow: skipped when value is "bravo"
+      - name: finish
+        type: echo_job
+        when: "value != 'bravo'"
+        params:
+          args: ["echo 'finished: {{ value }}' && sleep 2"]
+
+  # Final workflow: only runs after all fan-out sub-workflows complete.
+  # Receives aggregated results from the parent via vars.
+  - name: final-workflow
+    vars:
+      total: null    # required — passed by parent
+
+    steps:
+      - name: summary
+        type: echo_job
+        params:
+          args: ["echo 'final workflow: processed {{ total }} items' && sleep 2"]
+
+      - name: cleanup
+        type: echo_job
+        params:
+          args: ["echo 'cleanup complete' && sleep 1"]

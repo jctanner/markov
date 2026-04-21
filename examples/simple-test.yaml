@@ -1,0 +1,30 @@
+---
+entrypoint: hello
+
+namespace: markov-test
+
+forks: 2
+
+vars:
+  greeting: "hello from markov"
+
+workflows:
+  - name: hello
+    steps:
+      - name: say-hello
+        type: shell_exec
+        params:
+          command: "echo '{{ greeting }}'"
+        register: hello_result
+
+      - name: show-date
+        type: shell_exec
+        params:
+          command: "date +%Y-%m-%d"
+        register: date_result
+
+      - name: combine
+        type: shell_exec
+        params:
+          command: "echo 'Message: {{ hello_result.stdout }} on {{ date_result.stdout }}'"
+        register: combined

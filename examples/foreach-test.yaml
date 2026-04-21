@@ -1,0 +1,40 @@
+---
+entrypoint: main
+
+forks: 3
+
+vars:
+  items: ["alpha", "bravo", "charlie", "delta", "echo"]
+
+workflows:
+  - name: main
+    steps:
+      - name: process-items
+        type: shell_exec
+        for_each: "items"
+        as: item
+        params:
+          command: "echo 'processing {{ item }}' && sleep 1"
+        register: results
+
+      - name: summary
+        type: shell_exec
+        params:
+          command: "echo 'processed {{ results | length }} items'"
+
+  - name: sub-pipeline
+    vars:
+      value: null
+
+    steps:
+      - name: step-one
+        type: shell_exec
+        params:
+          command: "echo 'sub-pipeline step one: {{ value }}'"
+        register: step_one
+
+      - name: step-two
+        type: shell_exec
+        when: "value != 'skip-me'"
+        params:
+          command: "echo 'sub-pipeline step two: {{ value }}'"
