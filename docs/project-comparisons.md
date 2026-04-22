@@ -9,6 +9,7 @@ How Markov relates to existing tools in workflow orchestration, infrastructure a
 | **YAML-native workflows** | ✅ | ✅ | ✅ | ❌ (Groovy/JCasC) | ✅ | ✅ | ✅ | ❌ (Python) |
 | **K8s Jobs as execution** | ✅ | ❌ (SSH) | ✅ (Pods) | ❌ | ✅ (Pods) | ⚠️ (deployable) | ❌ | ❌ |
 | **Rule engine / gates** | ✅ (Grule) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Recursive workflows** | ✅ (gate-controlled) | ❌ | ❌ | ❌ | ❌ | ⚠️ (subflows) | ❌ | ✅ (cycles) |
 | **Checkpoint/resume** | ✅ (SQLite) | ❌ | ✅ (retry node) | ❌ | ❌ | ✅ | ❌ | ✅ |
 | **Fan-out concurrency** | ✅ (`for_each` + forks) | ✅ (host forks) | ✅ (DAG) | ✅ (parallel) | ✅ (matrix) | ✅ | ✅ (crews) | ✅ |
 | **Artifact loading** | ✅ (YAML/md/table) | ❌ | ✅ (S3/GCS) | ✅ (stash) | ✅ (results) | ✅ | ❌ | ❌ |
@@ -30,7 +31,7 @@ The most direct comparison. Markov borrows Ansible's ergonomic patterns — `whe
 | **Scope** | General-purpose IT automation | Long-running AI/ML pipeline orchestration |
 | **Inventory** | Hosts and groups | Namespaces and K8s resources |
 
-**Why not Ansible?** Ansible SSHes into machines and runs Python modules. Markov creates K8s Jobs that run containers (e.g., agent pods with LLM skills) and waits for them to finish. Checkpoint/resume and artifact loading exist because these jobs run for minutes to hours, not seconds. Ansible also has no rule engine — complex conditional logic requires deeply nested `when:` chains or custom plugins.
+**Why not Ansible?** Ansible SSHes into machines and runs Python modules. Markov creates K8s Jobs that run containers (e.g., agent pods with LLM skills) and waits for them to finish. Checkpoint/resume and artifact loading exist because these jobs run for minutes to hours, not seconds. Ansible has no rule engine — complex conditional logic requires deeply nested `when:` chains or custom plugins. Ansible also has no concept of recursive workflow invocation — playbooks execute linearly, and loops (`loop:` / `until:`) are limited to retrying individual tasks, not re-entering an entire workflow with updated state.
 
 ## Argo Workflows
 
@@ -42,13 +43,13 @@ Argo is the most popular K8s-native workflow engine. The research evaluated it d
 | **Infrastructure** | Always-on controller + server + CRDs | Single binary, SQLite state file |
 | **RBAC surface** | Broad (controller needs pods, PVCs, configmaps, secrets) | Narrow (Jobs + pods/log only) |
 | **Retry** | Built-in `retryStrategy` per step | Checkpoint/resume from last success |
-| **DAG** | First-class `dag` template type | Sequential with sub-workflow fan-out |
+| **DAG** | First-class `dag` template type (acyclic only) | Sequential, fan-out, and recursive workflows |
 | **Artifacts** | S3/GCS/HTTP native | YAML/markdown from local or K8s volumes |
 | **Human gates** | `suspend` node (no approval UI) | `gate` step with pause action (extensible) |
 | **Rule engine** | ❌ | ✅ Grule forward-chaining |
 | **Resource overhead** | Controller: 500m–2Gi; sidecar per pod | No overhead beyond the workflow runner |
 
-**Why not Argo?** Argo is a general-purpose container orchestration engine. It doesn't understand LLM-specific patterns (model fallback, token budget, quality-score gating). Adding rule-engine logic requires building outside Argo's model. The CRD installation and RBAC surface area are also significant in enterprise multi-tenant environments. Markov uses bare `batch/v1` Jobs — no operator, no CRDs, no sidecar containers.
+**Why not Argo?** Argo is a general-purpose container orchestration engine. Its DAGs are acyclic by definition — there is no way to express "loop until a rule says stop." Argo's `retryStrategy` retries a failed step, but it can't re-enter a workflow with mutated state. Adding rule-engine logic requires building outside Argo's model. The CRD installation and RBAC surface area are also significant in enterprise multi-tenant environments. Markov uses bare `batch/v1` Jobs — no operator, no CRDs, no sidecar containers.
 
 ## Jenkins
 
@@ -112,10 +113,13 @@ AI agent frameworks that orchestrate LLM interactions.
 
 ## The Whitespace
 
-No existing tool combines all three:
+No existing tool combines all four:
 
 1. **Ansible-like YAML semantics** — `when:`, `register:`, `for_each`, template rendering
 2. **Rule-engine gating** — salience-ordered forward-chaining rules (Grule)
-3. **K8s-native agent orchestration** — long-running Jobs with checkpoint/resume
+3. **Recursive state-machine workflows** — gate-controlled loops where the next state depends on the current facts, not a fixed DAG
+4. **K8s-native agent orchestration** — long-running Jobs with checkpoint/resume
 
-The market research (`references/cosim-workflow-poc/rq3-market-landscape-yaml-declarative-ai-agent-chaining-tools.md`) confirms this is a genuine gap. Infrastructure automation tools (Ansible) don't have rule engines. Workflow engines (Argo, Tekton) don't have declarative decision logic. AI agent frameworks (CrewAI, LangGraph) don't manage infrastructure. Markov sits at their intersection.
+Most workflow engines enforce acyclic execution — steps run in order or as a DAG, but can never revisit earlier states. Markov workflows can recursively invoke themselves or each other, with gate rules deciding on each cycle whether to continue, skip, or pause. This makes Markov a true state machine: evaluate rules, transition, repeat — the same pattern that defines a Markov chain.
+
+The market research (`references/cosim-workflow-poc/rq3-market-landscape-yaml-declarative-ai-agent-chaining-tools.md`) confirms this is a genuine gap. Infrastructure automation tools (Ansible) don't have rule engines or recursive workflows. Workflow engines (Argo, Tekton) enforce acyclic execution and have no declarative decision logic. AI agent frameworks (CrewAI, LangGraph) don't manage infrastructure. Markov sits at their intersection.
