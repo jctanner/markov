@@ -1,0 +1,29 @@
+---
+# Assert step test — validates conditions and fails the workflow if any are false.
+
+entrypoint: main
+
+vars:
+  status: ready
+  score: 8
+
+workflows:
+  - name: main
+    steps:
+      - name: check_preconditions
+        type: assert
+        that:
+          - "status == 'ready'"
+          - "score >= 4"
+        msg: "Preconditions not met"
+
+      - name: check_high_score
+        type: assert
+        that:
+          - "score >= 8"
+
+      - name: done
+        type: shell_exec
+        params:
+          command: echo
+          args: ["All assertions passed"]

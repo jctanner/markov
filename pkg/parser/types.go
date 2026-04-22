@@ -5,8 +5,19 @@ type WorkflowFile struct {
 	Namespace  string              `yaml:"namespace"`
 	Forks      int                 `yaml:"forks"`
 	Vars       map[string]any      `yaml:"vars"`
+	Rules      []Rule              `yaml:"rules"`
 	StepTypes  map[string]StepType `yaml:"step_types"`
 	Workflows  []Workflow          `yaml:"workflows"`
+}
+
+type Rule struct {
+	Name        string         `yaml:"name"`
+	File        string         `yaml:"file"`
+	Description string         `yaml:"description"`
+	Salience    int            `yaml:"salience"`
+	When        string         `yaml:"when"`
+	Action      string         `yaml:"action"`
+	SetFact     map[string]any `yaml:"set_fact"`
 }
 
 type StepType struct {
@@ -37,6 +48,10 @@ type Step struct {
 	Workflow    string              `yaml:"workflow"`
 	Vars        map[string]any      `yaml:"vars"`
 	Artifacts   map[string]Artifact `yaml:"artifacts"`
+	That        []string            `yaml:"that"`
+	Msg         string              `yaml:"msg"`
+	Rules       []string            `yaml:"rules"`
+	Facts       map[string]any      `yaml:"facts"`
 }
 
 type Artifact struct {

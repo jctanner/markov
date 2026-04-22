@@ -1,0 +1,250 @@
+---
+# RFE pipeline with rule-engine gates
+#
+# Gates evaluate rules in salience order. Each rule can set facts
+# and declare an action (continue/skip/pause). The first matching
+# rule's action controls the gate outcome. Facts set by any fired
+# rule persist in the workflow context for downstream steps.
+
+entrypoint: main
+
+namespace: ai-pipeline
+
+vars:
+  issue: RHAIRFE-1981
+  model: opus
+
+rules:
+  - name: rfe_auto_approve
+    description: "Auto-approve reviews with perfect scores"
+    salience: 100
+    when: "review_passed and review_score >= 8"
+    action: continue
+    set_fact:
+      rfe_auto_approved: true
+
+  - name: rfe_needs_attention
+    description: "Flag reviews that need human attention"
+    salience: 50
+    when: "review_passed and review_score >= 4 and review_score < 8"
+    action: pause
+    set_fact:
+      rfe_needs_attention: true
+
+  - name: rfe_reject
+    description: "Reject reviews with low scores"
+    salience: 200
+    when: "review_score < 4"
+    action: skip
+    set_fact:
+      rfe_rejected: true
+      reject_reason: "Review score below threshold"
+
+  - name: strat_skip_if_refined
+    description: "Skip refine if already done"
+    salience: 100
+    when: "strat_already_refined"
+    action: skip
+
+  - name: strat_skip_if_reviewed
+    description: "Skip review if already done"
+    salience: 100
+    when: "strat_already_reviewed"
+    action: skip
+
+step_types:
+  agent_job:
+    base: k8s_job
+    description: "Run a pipeline-agent skill as a K8s Job"
+    job:
+      image: pipeline-agent:latest
+      backoff_limit: 0
+      ttl_seconds: 86400
+      service_account: pipeline-dashboard
+      secrets:
+        - pipeline-secrets
+      volumes:
+        - name: pipeline-artifacts
+          mount: /app/artifacts
+          pvc: pipeline-artifacts
+
+workflows:
+  - name: main
+    steps:
+
+      # ── Load phase ─────────────────────────────────────────
+
+      - name: check_existing
+        type: load_artifact
+        artifacts:
+          review:
+            path: "/app/artifacts/rfe-reviews/{{ issue }}-review.md"
+            format: markdown
+            source: k8s
+            optional: true
+
+      - name: rfe_speedrun
+        type: agent_job
+        when: "check_existing.artifacts.review == None"
+        params:
+          command: ["/bin/bash"]
+          args:
+            - /app/scripts/run_skill.sh
+            - --skill
+            - rfe-speedrun
+            - --issue
+            - "{{ issue }}"
+            - --model
+            - "{{ model }}"
+
+      - name: load_rfe_results
+        type: load_artifact
+        artifacts:
+          task:
+            path: "/app/artifacts/rfe-tasks/{{ issue }}.md"
+            format: markdown
+            source: k8s
+          review:
+            path: "/app/artifacts/rfe-reviews/{{ issue }}-review.md"
+            format: markdown
+            source: k8s
+
+      - name: check_strat_exists
+        type: load_artifact
+        artifacts:
+          tickets:
+            path: "/app/artifacts/strat-tickets.md"
+            format: markdown_table
+            source: k8s
+            optional: true
+
+      # ── Compute facts for gate evaluation ───────────────────
+
+      - name: eval_conditions
+        type: set_fact
+        vars:
+          review_passed: "load_rfe_results.artifacts.review.frontmatter.pass == true and load_rfe_results.artifacts.review.frontmatter.recommendation != 'reject'"
+          review_score: "{{ load_rfe_results.artifacts.review.frontmatter.scores.total }}"
+          already_submitted: "load_rfe_results.artifacts.task.frontmatter.status == 'Submitted'"
+          strat_exists: "check_strat_exists.artifacts.tickets != None and (issue in check_strat_exists.artifacts.tickets.rfe_source)"
+          strat_key:
+            from: check_strat_exists.artifacts.tickets.rows
+            match:
+              rfe_source: "{{ issue }}"
+            field: strat_key
+
+      - name: load_strat_artifacts
+        type: load_artifact
+        when: "strat_key"
+        artifacts:
+          strat_task:
+            path: "/app/artifacts/strat-tasks/{{ strat_key }}.md"
+            format: markdown
+            source: k8s
+            optional: true
+          strat_review:
+            path: "/app/artifacts/strat-reviews/{{ strat_key }}-review.md"
+            format: markdown
+            source: k8s
+            optional: true
+
+      - name: eval_strat_status
+        type: set_fact
+        vars:
+          strat_already_refined: "load_strat_artifacts.artifacts.strat_task != None and load_strat_artifacts.artifacts.strat_task.frontmatter.status == 'Refined'"
+          strat_already_reviewed: "load_strat_artifacts.artifacts.strat_review != None"
+
+      # ── Gates ───────────────────────────────────────────────
+
+      - name: review_quality_gate
+        type: gate
+        rules:
+          - rfe_auto_approve
+          - rfe_needs_attention
+          - rfe_reject
+        on_pause:
+          notify: "#rfe-review"
+          message: "{{ issue }} needs human review (score: {{ review_score }}/8)"
+          timeout: 4h
+          on_timeout: skip
+
+      # ── Action phase ────────────────────────────────────────
+
+      - name: rfe_submit
+        type: agent_job
+        when: "not already_submitted and not rfe_rejected"
+        params:
+          command: ["/bin/bash"]
+          args:
+            - /app/scripts/run_skill.sh
+            - --skill
+            - rfe-submit
+            - --issue
+            - "{{ issue }}"
+            - --model
+            - "{{ model }}"
+
+      - name: add_strat_label
+        type: agent_job
+        when: "not strat_exists and not rfe_rejected"
+        params:
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              curl -sfk -X PUT \
+                -H "Content-Type: application/json" \
+                -u "$JIRA_USER:$JIRA_TOKEN" \
+                "$JIRA_SERVER/rest/api/2/issue/{{ issue }}" \
+                -d '{"update":{"labels":[{"add":"strat-creator-3.5"}]}}'
+
+      - name: strategy_create
+        type: agent_job
+        when: "not strat_exists and not rfe_rejected"
+        params:
+          command: ["/bin/bash"]
+          args:
+            - /app/scripts/run_skill.sh
+            - --skill
+            - strategy-create
+            - --issue
+            - "{{ issue }}"
+            - --model
+            - "{{ model }}"
+
+      - name: refine_gate
+        type: gate
+        rules:
+          - strat_skip_if_refined
+
+      - name: strategy_refine
+        type: agent_job
+        when: "not rfe_rejected"
+        params:
+          command: ["/bin/bash"]
+          args:
+            - /app/scripts/run_skill.sh
+            - --skill
+            - strategy-refine
+            - --issue
+            - "{{ issue }}"
+            - --model
+            - "{{ model }}"
+
+      - name: review_gate
+        type: gate
+        rules:
+          - strat_skip_if_reviewed
+
+      - name: strategy_review
+        type: agent_job
+        when: "not rfe_rejected"
+        params:
+          command: ["/bin/bash"]
+          args:
+            - /app/scripts/run_skill.sh
+            - --skill
+            - strategy-review
+            - --issue
+            - "{{ issue }}"
+            - --model
+            - "{{ model }}"

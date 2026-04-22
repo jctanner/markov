@@ -129,6 +129,14 @@ func (e *Engine) Resume(ctx context.Context, runID string) error {
 				for k, v := range facts {
 					runCtx[k] = v
 				}
+			} else if isGateStep(wf, s.StepName) && s.OutputJSON != "" {
+				var output map[string]any
+				json.Unmarshal([]byte(s.OutputJSON), &output)
+				if facts, ok := output["facts"].(map[string]any); ok {
+					for k, v := range facts {
+						runCtx[k] = v
+					}
+				}
 			} else if s.ArtifactsJSON != "" {
 				var stepData map[string]any
 				json.Unmarshal([]byte(s.ArtifactsJSON), &stepData)
@@ -179,6 +187,12 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 			if step.Type == "set_fact" {
 				for k, v := range output {
 					runCtx[k] = v
+				}
+			} else if step.Type == "gate" {
+				if facts, ok := output["facts"].(map[string]any); ok {
+					for k, v := range facts {
+						runCtx[k] = v
+					}
 				}
 			} else if step.Register != "" {
 				runCtx[step.Register] = output
@@ -240,6 +254,70 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 			StepName:     step.Name,
 			Status:       state.StepCompleted,
 			OutputJSON:   string(factsJSON),
+			StartedAt:    &now,
+			CompletedAt:  &completed,
+		})
+		log.Printf("[run:%s] step %q completed", runID, step.Name)
+		return nil
+	}
+
+	if base == "assert" {
+		log.Printf("[run:%s] evaluating assertions for step %q", runID, step.Name)
+		if len(step.That) == 0 {
+			return e.failStep(ctx, runID, workflowName, step.Name, fmt.Errorf("assert step has no conditions defined"))
+		}
+		for _, expr := range step.That {
+			ok, err := e.tmpl.EvalBool(expr, runCtx)
+			if err != nil {
+				return e.failStep(ctx, runID, workflowName, step.Name, fmt.Errorf("evaluating assertion %q: %w", expr, err))
+			}
+			if !ok {
+				msg := step.Msg
+				if msg == "" {
+					msg = fmt.Sprintf("assertion failed: %s", expr)
+				}
+				return e.failStep(ctx, runID, workflowName, step.Name, fmt.Errorf("%s", msg))
+			}
+			e.verbose("[run:%s]   assert %q: ok", runID, expr)
+		}
+		completed := time.Now()
+		e.store.SaveStep(ctx, &state.StepResult{
+			RunID:        runID,
+			WorkflowName: workflowName,
+			StepName:     step.Name,
+			Status:       state.StepCompleted,
+			StartedAt:    &now,
+			CompletedAt:  &completed,
+		})
+		log.Printf("[run:%s] step %q completed", runID, step.Name)
+		return nil
+	}
+
+	if base == "gate" {
+		log.Printf("[run:%s] evaluating gate %q (%d rules)", runID, step.Name, len(step.Rules))
+		result, err := e.evaluateGate(runID, step.Rules, step.Facts, runCtx)
+		if err != nil {
+			return e.failStep(ctx, runID, workflowName, step.Name, fmt.Errorf("gate evaluation: %w", err))
+		}
+
+		log.Printf("[run:%s] gate %q: action=%s, fired=%v", runID, step.Name, result.Action, result.FiredRules)
+
+		if result.Action == "pause" {
+			log.Printf("[run:%s] gate %q requested pause (not yet implemented, continuing)", runID, step.Name)
+		}
+
+		outputJSON, _ := json.Marshal(map[string]any{
+			"action":      result.Action,
+			"fired_rules": result.FiredRules,
+			"facts":       result.Facts,
+		})
+		completed := time.Now()
+		e.store.SaveStep(ctx, &state.StepResult{
+			RunID:        runID,
+			WorkflowName: workflowName,
+			StepName:     step.Name,
+			Status:       state.StepCompleted,
+			OutputJSON:   string(outputJSON),
 			StartedAt:    &now,
 			CompletedAt:  &completed,
 		})
@@ -634,6 +712,15 @@ func isSetFactStep(wf *parser.Workflow, stepName string) bool {
 	for _, s := range wf.Steps {
 		if s.Name == stepName {
 			return s.Type == "set_fact"
+		}
+	}
+	return false
+}
+
+func isGateStep(wf *parser.Workflow, stepName string) bool {
+	for _, s := range wf.Steps {
+		if s.Name == stepName {
+			return s.Type == "gate"
 		}
 	}
 	return false

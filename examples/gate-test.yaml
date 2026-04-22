@@ -1,0 +1,130 @@
+---
+# Gate step test — demonstrates the Grule-backed rule engine.
+#
+# A "gate" step evaluates a set of named rules against the workflow
+# context. Rules are defined in the top-level `rules:` block and
+# referenced by name in each gate step.
+#
+# Scoping:
+#   Rules automatically see global vars, workflow vars, CLI --var
+#   overrides, and set_fact values.
+#
+#   Rules do NOT see step results, register outputs, or artifact
+#   data directly. If a rule needs data from a step, the gate must
+#   map it in via a `facts:` block:
+#
+#     - name: quality_gate
+#       type: gate
+#       facts:
+#         score: "{{ analysis.score }}"
+#       rules:
+#         - auto_approve
+#
+#   This keeps rules portable — "score >= 8" works in any workflow
+#   that provides a score fact, regardless of which step produced it.
+#   It also prevents fact collisions in for_each fan-outs, where
+#   each iteration has its own step results that should not leak
+#   across iterations.
+#
+# Rule fields:
+#   - when:      a condition expression (same syntax as step when:)
+#   - salience:  priority (higher fires first)
+#   - action:    what happens if the rule matches
+#                  continue — proceed to the next step (default)
+#                  skip     — skip subsequent steps until the next gate
+#                  pause    — halt and wait for external input
+#   - set_fact:  variables to set in the workflow context when the
+#                rule fires (available to all downstream steps)
+#
+# Evaluation:
+#   Rules are evaluated in salience order. ALL matching rules fire
+#   and their set_fact values are merged into the context. The
+#   highest-salience matching rule's action determines the gate
+#   outcome.
+#
+# Try changing the vars below to see different outcomes:
+#   severity: critical, confidence: 0.98  → auto-approved
+#   severity: high,     confidence: 0.92  → flagged for review
+#   severity: low,      backlog_count: 60 → deferred
+#   (remove confidence)                   → rejected
+
+entrypoint: main
+
+vars:
+  severity: high
+  confidence: 0.92
+  backlog_count: 30
+
+rules:
+  - name: critical_auto_approve
+    description: "Auto-approve critical items with high confidence"
+    salience: 100
+    when: "severity == 'critical' and confidence > 0.95"
+    action: continue
+    set_fact:
+      auto_approved: true
+      approval_reason: "High confidence critical fix"
+
+  - name: high_severity_review
+    description: "Flag high severity for review"
+    salience: 50
+    when: "severity == 'high' and not auto_approved"
+    action: continue
+    set_fact:
+      needs_review: true
+
+  - name: low_priority_defer
+    description: "Defer low severity when backlog is full"
+    salience: 10
+    when: "severity == 'low' and backlog_count > 50"
+    action: skip
+    set_fact:
+      deferred: true
+      defer_reason: "Backlog overflow"
+
+  - name: reject_no_confidence
+    description: "Reject items with no confidence score"
+    salience: 200
+    when: "confidence == None"
+    action: skip
+    set_fact:
+      rejected: true
+
+workflows:
+  - name: main
+    steps:
+      # Gate using only vars — no facts: block needed since
+      # severity, confidence, and backlog_count are all vars.
+      - name: triage_gate
+        type: gate
+        rules:
+          - critical_auto_approve
+          - high_severity_review
+          - low_priority_defer
+          - reject_no_confidence
+
+      # Validate the gate set the expected facts for this input.
+      # With severity=high and confidence=0.92, we expect:
+      #   needs_review=true, no auto_approved, no rejection
+      - name: verify_triage
+        type: assert
+        that:
+          - "needs_review"
+          - "not auto_approved"
+          - "not rejected"
+          - "not deferred"
+        msg: "Triage gate did not produce expected results for severity=high"
+
+      - name: run_analysis
+        type: shell_exec
+        when: "not deferred and not rejected"
+        params:
+          command: echo
+          args: ["Analysis running for severity={{ severity }} review={{ needs_review }}"]
+
+      - name: notify_reviewer
+        type: shell_exec
+        when: "needs_review"
+        params:
+          command: echo
+          args: ["Flagged for human review (confidence={{ confidence }})"]

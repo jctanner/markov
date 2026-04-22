@@ -20,6 +20,9 @@ func Parse(data []byte) (*WorkflowFile, error) {
 	if err := yaml.Unmarshal(data, &wf); err != nil {
 		return nil, fmt.Errorf("parsing workflow YAML: %w", err)
 	}
+	if err := loadRuleFiles(&wf); err != nil {
+		return nil, err
+	}
 	if err := validate(&wf); err != nil {
 		return nil, err
 	}
@@ -85,6 +88,17 @@ func validateSteps(wf *WorkflowFile, workflowName string, steps []Step) error {
 				return fmt.Errorf("workflow %q, step %q: %w", workflowName, s.Name, err)
 			}
 		}
+
+		if s.Type == "gate" {
+			if len(s.Rules) == 0 {
+				return fmt.Errorf("workflow %q, step %q: gate must reference at least one rule", workflowName, s.Name)
+			}
+			for _, rn := range s.Rules {
+				if wf.GetRule(rn) == nil {
+					return fmt.Errorf("workflow %q, step %q: references unknown rule %q", workflowName, s.Name, rn)
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -97,6 +111,7 @@ var primitives = map[string]bool{
 	"gate":          true,
 	"load_artifact": true,
 	"set_fact":      true,
+	"assert":        true,
 }
 
 func resolveType(wf *WorkflowFile, typeName string) error {
@@ -124,6 +139,38 @@ func (wf *WorkflowFile) GetWorkflow(name string) *Workflow {
 			return &wf.Workflows[i]
 		}
 	}
+	return nil
+}
+
+func (wf *WorkflowFile) GetRule(name string) *Rule {
+	for i := range wf.Rules {
+		if wf.Rules[i].Name == name {
+			return &wf.Rules[i]
+		}
+	}
+	return nil
+}
+
+func loadRuleFiles(wf *WorkflowFile) error {
+	var expanded []Rule
+	for _, r := range wf.Rules {
+		if r.File != "" {
+			data, err := os.ReadFile(r.File)
+			if err != nil {
+				return fmt.Errorf("loading rule file %q: %w", r.File, err)
+			}
+			var rf struct {
+				Rules []Rule `yaml:"rules"`
+			}
+			if err := yaml.Unmarshal(data, &rf); err != nil {
+				return fmt.Errorf("parsing rule file %q: %w", r.File, err)
+			}
+			expanded = append(expanded, rf.Rules...)
+		} else {
+			expanded = append(expanded, r)
+		}
+	}
+	wf.Rules = expanded
 	return nil
 }
 
