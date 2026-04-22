@@ -1,0 +1,148 @@
+---
+# Full pipeline — fan-out + gated recursion + multi-step processing.
+#
+# Demonstrates all three flow-control mechanisms together:
+#   1. Fan-out: process 5 targets concurrently
+#   2. Gate/rules: each target loops through stages until max_stages
+#   3. Recursion: stage_loop calls itself with an incremented counter
+#
+# Workflow structure:
+#   main
+#     ├── init
+#     ├── scan
+#     ├── process_all (for_each target)
+#     │     └── process_target
+#     │           ├── prepare
+#     │           ├── run_stages → stage_loop (recursive)
+#     │           │     ├── stage_gate
+#     │           │     ├── validate
+#     │           │     ├── transform
+#     │           │     ├── verify
+#     │           │     ├── advance_stage
+#     │           │     └── next_stage → stage_loop (recurse)
+#     │           └── finalize
+#     └── report
+#
+# With 5 targets × 4 stages, this produces ~130 step nodes
+# across ~30 subgraphs.
+
+entrypoint: main
+
+vars:
+  targets: ["alpha", "bravo", "charlie", "delta", "echo"]
+  stage: 0
+  max_stages: 4
+
+rules:
+  - name: stage_continue
+    description: "Keep processing stages"
+    salience: 10
+    when: "stage < max_stages"
+    action: continue
+    set_fact:
+      stages_done: false
+
+  - name: stage_complete
+    description: "All stages finished"
+    salience: 100
+    when: "stage >= max_stages"
+    action: skip
+    set_fact:
+      stages_done: true
+
+workflows:
+  - name: main
+    steps:
+      - name: init
+        type: shell_exec
+        params:
+          command: echo
+          args: ["pipeline starting with {{ targets | length }} targets, {{ max_stages }} stages each"]
+
+      - name: scan
+        type: shell_exec
+        params:
+          command: echo
+          args: ["scanning targets..."]
+
+      - name: process_all
+        for_each: "targets"
+        as: target
+        workflow: process_target
+        vars:
+          target: "{{ target }}"
+          stage: 0
+
+      - name: report
+        type: shell_exec
+        params:
+          command: echo
+          args: ["pipeline complete — all targets processed"]
+
+  - name: process_target
+    vars:
+      target: null
+      stage: null
+    steps:
+      - name: prepare
+        type: shell_exec
+        params:
+          command: echo
+          args: ["[{{ target }}] preparing target"]
+
+      - name: run_stages
+        workflow: stage_loop
+        vars:
+          target: "{{ target }}"
+          stage: "{{ stage }}"
+
+      - name: finalize
+        type: shell_exec
+        params:
+          command: echo
+          args: ["[{{ target }}] target complete"]
+
+  - name: stage_loop
+    vars:
+      target: null
+      stage: null
+    steps:
+      - name: stage_gate
+        type: gate
+        rules:
+          - stage_continue
+          - stage_complete
+
+      - name: validate
+        type: shell_exec
+        when: "not stages_done"
+        params:
+          command: echo
+          args: ["[{{ target }}] stage {{ stage }}: validating"]
+
+      - name: transform
+        type: shell_exec
+        when: "not stages_done"
+        params:
+          command: echo
+          args: ["[{{ target }}] stage {{ stage }}: transforming"]
+
+      - name: verify
+        type: shell_exec
+        when: "not stages_done"
+        params:
+          command: echo
+          args: ["[{{ target }}] stage {{ stage }}: verifying"]
+
+      - name: advance_stage
+        type: set_fact
+        when: "not stages_done"
+        vars:
+          stage: "{{ stage + 1 }}"
+
+      - name: next_stage
+        workflow: stage_loop
+        when: "not stages_done"
+        vars:
+          target: "{{ target }}"
+          stage: "{{ stage }}"

@@ -13,7 +13,7 @@ import (
 type runNode struct {
 	run      *state.Run
 	steps    []stepInfo
-	children map[string]*runNode // parentStep -> child run
+	children map[string][]*runNode // parentStep -> child runs
 }
 
 type stepInfo struct {
@@ -40,7 +40,7 @@ func buildRunTree(ctx context.Context, store state.Store, runID string) (*runNod
 
 	node := &runNode{
 		run:      run,
-		children: make(map[string]*runNode),
+		children: make(map[string][]*runNode),
 	}
 
 	for _, child := range childRuns {
@@ -48,7 +48,7 @@ func buildRunTree(ctx context.Context, store state.Store, runID string) (*runNod
 		if err != nil {
 			return nil, err
 		}
-		node.children[child.ParentStep] = childNode
+		node.children[child.ParentStep] = append(node.children[child.ParentStep], childNode)
 	}
 
 	node.steps = mergeSteps(dbSteps, node.children)
@@ -56,7 +56,7 @@ func buildRunTree(ctx context.Context, store state.Store, runID string) (*runNod
 	return node, nil
 }
 
-func mergeSteps(dbSteps []*state.StepResult, children map[string]*runNode) []stepInfo {
+func mergeSteps(dbSteps []*state.StepResult, children map[string][]*runNode) []stepInfo {
 	dbStepNames := make(map[string]bool)
 	var all []stepInfo
 
@@ -69,14 +69,18 @@ func mergeSteps(dbSteps []*state.StepResult, children map[string]*runNode) []ste
 		})
 	}
 
-	for parentStep, child := range children {
+	for parentStep, childList := range children {
 		if dbStepNames[parentStep] {
 			continue
 		}
-		st := &child.run.StartedAt
+		firstChild := childList[0]
+		st := &firstChild.run.StartedAt
 		status := state.StepCompleted
-		if child.run.Status == state.RunFailed {
-			status = state.StepFailed
+		for _, child := range childList {
+			if child.run.Status == state.RunFailed {
+				status = state.StepFailed
+				break
+			}
 		}
 		all = append(all, stepInfo{
 			name:      parentStep,
@@ -170,13 +174,15 @@ func renderSubgraph(b *strings.Builder, node *runNode, allNodes *[]nodeStyle, id
 
 	fmt.Fprintf(b, "    end\n")
 
-	for stepName, child := range node.children {
-		renderSubgraph(b, child, allNodes, idGen)
-
+	for stepName, childList := range node.children {
 		parentNodeID := idGen.stepID(node.run.RunID, stepName)
-		if len(child.steps) > 0 {
-			childFirstID := idGen.stepID(child.run.RunID, child.steps[0].name)
-			fmt.Fprintf(b, "    %s --> %s\n", parentNodeID, childFirstID)
+		for _, child := range childList {
+			renderSubgraph(b, child, allNodes, idGen)
+
+			if len(child.steps) > 0 {
+				childFirstID := idGen.stepID(child.run.RunID, child.steps[0].name)
+				fmt.Fprintf(b, "    %s --> %s\n", parentNodeID, childFirstID)
+			}
 		}
 	}
 }
