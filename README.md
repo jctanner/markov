@@ -16,7 +16,7 @@ A Go-based YAML workflow engine for Kubernetes. Define workflows declaratively, 
 - **Artifact loading** — load YAML, markdown, and markdown table files from local or K8s volumes; use parsed data in conditions
 - **`set_fact`** — compute and store variables from expressions or table lookups for use in downstream steps
 - **`assert`** — validate conditions and fail the workflow with a message if any are false
-- **Rule engine / gates** — define named rules with salience-based priority; gate steps evaluate rules with forward chaining, set facts, and control flow (continue/skip/pause)
+- **Rule engine / gates** — define named rules with salience-based priority; gate steps evaluate rules via [Grule](https://github.com/hyperjumptech/grule-rule-engine) with forward chaining, set facts, and control flow (continue/skip/pause)
 - **Checkpoint/resume** — SQLite state store; resume failed runs from the last successful step
 - **K8s native** — creates `batch/v1` Jobs directly (no Argo dependency)
 
