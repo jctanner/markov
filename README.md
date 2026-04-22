@@ -20,26 +20,9 @@ A Go-based YAML workflow engine for Kubernetes. Define workflows declaratively, 
 - **Checkpoint/resume** — SQLite state store; resume failed runs from the last successful step
 - **K8s native** — creates `batch/v1` Jobs directly (no Argo dependency)
 
-## How is this different from Ansible?
+## How is this different from X?
 
-The YAML borrows from Ansible's patterns — `when:`, `register:`, `for_each`,
-`forks`, template rendering — because those are good ideas. But the execution
-model is fundamentally different.
-
-| | Ansible | Markov |
-|---|---|---|
-| **Target** | Remote hosts via SSH | K8s Jobs in a namespace |
-| **Execution** | Runs modules on hosts | Creates K8s Jobs, polls for completion |
-| **State** | Stateless between runs | SQLite checkpoint/resume |
-| **Concurrency** | Forks across hosts | Forks across sub-workflows (fan-out) |
-| **Data flow** | Register + facts | Register + artifact loading + set_fact + rule engine |
-| **Decision logic** | `when:` conditionals only | `when:` + gate steps with salience-ordered rules |
-| **Scope** | General-purpose IT automation | Long-running AI/ML pipeline orchestration |
-
-Ansible SSHes into machines and runs Python modules. Markov creates K8s Jobs
-that run containers (e.g., agent pods with LLM skills) and waits for them to
-finish. Checkpoint/resume and artifact loading exist because these jobs run
-for minutes to hours, not seconds.
+See [docs/project-comparisons.md](docs/project-comparisons.md) for detailed comparisons with Ansible, Argo Workflows, Jenkins, Tekton, Kestra, CrewAI, and LangGraph.
 
 ## Quick Start
 
