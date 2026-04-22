@@ -21,22 +21,94 @@ func (e *Engine) evalFacts(vars map[string]any, runCtx map[string]any) (map[stri
 }
 
 func (e *Engine) evalFact(v any, runCtx map[string]any) (any, error) {
-	expr, ok := v.(string)
-	if !ok {
+	switch val := v.(type) {
+	case string:
+		if strings.Contains(val, "{{") || strings.Contains(val, "{%") {
+			rendered, err := e.tmpl.Render(val, runCtx)
+			if err != nil {
+				return nil, fmt.Errorf("rendering template: %w", err)
+			}
+			return rendered, nil
+		}
+		result, err := e.tmpl.EvalBool(val, runCtx)
+		if err != nil {
+			return nil, fmt.Errorf("evaluating expression: %w", err)
+		}
+		return result, nil
+
+	case map[string]any:
+		if fromPath, ok := val["from"].(string); ok {
+			return e.lookupFact(fromPath, val, runCtx)
+		}
+		return val, nil
+
+	default:
 		return v, nil
 	}
+}
 
-	if strings.Contains(expr, "{{") || strings.Contains(expr, "{%") {
-		rendered, err := e.tmpl.Render(expr, runCtx)
-		if err != nil {
-			return nil, fmt.Errorf("rendering template: %w", err)
+func (e *Engine) lookupFact(fromPath string, spec map[string]any, runCtx map[string]any) (any, error) {
+	source := resolveContextPath(fromPath, runCtx)
+	if source == nil {
+		if def, ok := spec["default"]; ok {
+			return def, nil
 		}
-		return rendered, nil
+		return nil, nil
 	}
 
-	val, err := e.tmpl.EvalBool(expr, runCtx)
-	if err != nil {
-		return nil, fmt.Errorf("evaluating expression: %w", err)
+	var rows []any
+	switch v := source.(type) {
+	case []any:
+		rows = v
+	case []map[string]any:
+		rows = make([]any, len(v))
+		for i, r := range v {
+			rows[i] = r
+		}
+	default:
+		return nil, fmt.Errorf("lookup: %q is not a list (got %T)", fromPath, source)
 	}
-	return val, nil
+
+	matchSpec, ok := spec["match"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("lookup: match criteria required")
+	}
+
+	matchVals := make(map[string]string)
+	for k, v := range matchSpec {
+		vs := fmt.Sprintf("%v", v)
+		if strings.Contains(vs, "{{") {
+			rendered, err := e.tmpl.Render(vs, runCtx)
+			if err != nil {
+				return nil, fmt.Errorf("lookup match %q: %w", k, err)
+			}
+			vs = rendered
+		}
+		matchVals[k] = vs
+	}
+
+	for _, item := range rows {
+		row, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		matched := true
+		for k, v := range matchVals {
+			if fmt.Sprintf("%v", row[k]) != v {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			if field, ok := spec["field"].(string); ok {
+				return row[field], nil
+			}
+			return row, nil
+		}
+	}
+
+	if def, ok := spec["default"]; ok {
+		return def, nil
+	}
+	return nil, nil
 }

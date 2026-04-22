@@ -155,6 +155,39 @@ workflows:
           already_submitted: "load_rfe_results.artifacts.task.frontmatter.status == 'Submitted'"
           strat_exists: "check_strat_exists.artifacts.tickets != None and (issue in check_strat_exists.artifacts.tickets.rfe_source)"
 
+      # Resolve the RHAISTRAT key for this RFE from the tickets table
+      - name: resolve_strat
+        type: set_fact
+        vars:
+          strat_key:
+            from: check_strat_exists.artifacts.tickets.rows
+            match:
+              rfe_source: "{{ issue }}"
+            field: strat_key
+
+      # Load strategy task and review artifacts if strat ticket exists
+      - name: load_strat_artifacts
+        type: load_artifact
+        when: "strat_key"
+        artifacts:
+          strat_task:
+            path: "/app/artifacts/strat-tasks/{{ strat_key }}.md"
+            format: markdown
+            source: k8s
+            optional: true
+          strat_review:
+            path: "/app/artifacts/strat-reviews/{{ strat_key }}-review.md"
+            format: markdown
+            source: k8s
+            optional: true
+
+      # Evaluate strategy completion status
+      - name: eval_strat_status
+        type: set_fact
+        vars:
+          strat_already_refined: "load_strat_artifacts.artifacts.strat_task != None and load_strat_artifacts.artifacts.strat_task.frontmatter.status == 'Refined'"
+          strat_already_reviewed: "load_strat_artifacts.artifacts.strat_review != None"
+
       # Submit the RFE if the review passed and not already submitted
       - name: rfe_submit
         type: agent_job
@@ -195,6 +228,38 @@ workflows:
             - /app/scripts/run_skill.sh
             - --skill
             - strategy-create
+            - --issue
+            - "{{ issue }}"
+            - --model
+            - "{{ model }}"
+
+      # Refine the strategy document
+      # ederign/strat-creator@main:strategy-refine
+      - name: strategy_refine
+        type: agent_job
+        when: "review_passed and not strat_already_refined"
+        params:
+          command: ["/bin/bash"]
+          args:
+            - /app/scripts/run_skill.sh
+            - --skill
+            - strategy-refine
+            - --issue
+            - "{{ issue }}"
+            - --model
+            - "{{ model }}"
+
+      # Review the strategy document
+      # ederign/strat-creator@main:strategy-review
+      - name: strategy_review
+        type: agent_job
+        when: "review_passed and not strat_already_reviewed"
+        params:
+          command: ["/bin/bash"]
+          args:
+            - /app/scripts/run_skill.sh
+            - --skill
+            - strategy-review
             - --issue
             - "{{ issue }}"
             - --model
