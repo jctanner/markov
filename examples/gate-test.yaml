@@ -1,5 +1,6 @@
 ---
-# Gate step test — demonstrates the Grule-backed rule engine.
+# Gate step test — demonstrates the Grule-backed rule engine
+# (github.com/hyperjumptech/grule-rule-engine).
 #
 # A "gate" step evaluates a set of named rules against the workflow
 # context. Rules are defined in the top-level `rules:` block and
@@ -37,9 +38,11 @@
 #                rule fires (available to all downstream steps)
 #
 # Evaluation:
-#   Rules are evaluated in salience order. ALL matching rules fire
-#   and their set_fact values are merged into the context. The
-#   highest-salience matching rule's action determines the gate
+#   YAML rule conditions (pongo2 syntax) are compiled to Grule's
+#   GRL format and evaluated by Grule's forward-chaining engine.
+#   Rules fire in salience order. When a rule fires and sets facts,
+#   remaining rules are re-evaluated against the updated context.
+#   The highest-salience matching rule's action determines the gate
 #   outcome.
 #
 # Try changing the vars below to see different outcomes:
