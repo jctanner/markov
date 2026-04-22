@@ -141,6 +141,36 @@ func (s *SQLiteStore) ListRuns(ctx context.Context) ([]*Run, error) {
 	return runs, nil
 }
 
+func (s *SQLiteStore) GetChildRuns(ctx context.Context, parentRunID string) ([]*Run, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT run_id, workflow_file, entrypoint, status, vars_json,
+		       parent_run_id, parent_step, for_each_key, started_at, completed_at
+		FROM runs WHERE parent_run_id = ? ORDER BY started_at`, parentRunID)
+	if err != nil {
+		return nil, fmt.Errorf("getting child runs: %w", err)
+	}
+	defer rows.Close()
+
+	var runs []*Run
+	for rows.Next() {
+		var run Run
+		var parentRID, parentStep, forEachKey sql.NullString
+		var completedAt sql.NullTime
+		if err := rows.Scan(&run.RunID, &run.WorkflowFile, &run.Entrypoint, &run.Status, &run.VarsJSON,
+			&parentRID, &parentStep, &forEachKey, &run.StartedAt, &completedAt); err != nil {
+			return nil, fmt.Errorf("scanning child run: %w", err)
+		}
+		run.ParentRunID = parentRID.String
+		run.ParentStep = parentStep.String
+		run.ForEachKey = forEachKey.String
+		if completedAt.Valid {
+			run.CompletedAt = &completedAt.Time
+		}
+		runs = append(runs, &run)
+	}
+	return runs, nil
+}
+
 func (s *SQLiteStore) SaveStep(ctx context.Context, step *StepResult) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO steps (run_id, workflow_name, step_name, status, output_json, artifacts_json, error, started_at, completed_at)

@@ -80,7 +80,15 @@ func main() {
 		RunE:  validateWorkflow,
 	}
 
-	root.AddCommand(runCmd, resumeCmd, statusCmd, listCmd, validateCmd)
+	diagramCmd := &cobra.Command{
+		Use:   "diagram <run_id>",
+		Short: "Generate a Mermaid diagram of a completed run",
+		Args:  cobra.ExactArgs(1),
+		RunE:  showDiagram,
+	}
+	diagramCmd.Flags().StringVar(&flagStateStore, "state-store", "./markov-state.db", "SQLite state store path")
+
+	root.AddCommand(runCmd, resumeCmd, statusCmd, listCmd, validateCmd, diagramCmd)
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
@@ -233,6 +241,23 @@ func listRuns(cmd *cobra.Command, args []string) error {
 			r.StartedAt.Format("2006-01-02 15:04:05"), dur)
 	}
 
+	return nil
+}
+
+func showDiagram(cmd *cobra.Command, args []string) error {
+	store, err := state.NewSQLiteStore(flagStateStore)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	tree, err := buildRunTree(ctx, store, args[0])
+	if err != nil {
+		return err
+	}
+
+	fmt.Print(generateMermaid(tree))
 	return nil
 }
 

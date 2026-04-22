@@ -44,6 +44,9 @@ markov status <run-id> --steps
 
 # Resume a failed run
 markov resume <run-id>
+
+# Generate a Mermaid diagram of a completed run
+markov diagram <run-id>
 ```
 
 ## Example

@@ -54,6 +54,8 @@ type Store interface {
 	GetRun(ctx context.Context, runID string) (*Run, error)
 	ListRuns(ctx context.Context) ([]*Run, error)
 
+	GetChildRuns(ctx context.Context, parentRunID string) ([]*Run, error)
+
 	SaveStep(ctx context.Context, step *StepResult) error
 	GetSteps(ctx context.Context, runID string) ([]*StepResult, error)
 	GetStep(ctx context.Context, runID, workflowName, stepName string) (*StepResult, error)
