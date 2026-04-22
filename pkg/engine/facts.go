@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -28,7 +29,7 @@ func (e *Engine) evalFact(v any, runCtx map[string]any) (any, error) {
 			if err != nil {
 				return nil, fmt.Errorf("rendering template: %w", err)
 			}
-			return rendered, nil
+			return coerceString(rendered), nil
 		}
 		result, err := e.tmpl.EvalBool(val, runCtx)
 		if err != nil {
@@ -111,4 +112,24 @@ func (e *Engine) lookupFact(fromPath string, spec map[string]any, runCtx map[str
 		return def, nil
 	}
 	return nil, nil
+}
+
+func coerceString(s string) any {
+	s = strings.TrimSpace(s)
+	if s == "True" || s == "true" {
+		return true
+	}
+	if s == "False" || s == "false" {
+		return false
+	}
+	if s == "None" || s == "" {
+		return s
+	}
+	if i, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return int(i)
+	}
+	if f, err := strconv.ParseFloat(s, 64); err == nil {
+		return f
+	}
+	return s
 }

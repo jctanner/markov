@@ -243,6 +243,9 @@ func translateIdentExpr(tokens []token, pos int) (int, string, error) {
 		return 3, fmt.Sprintf(`Facts.GetNum("%s") %s %s`, ident, op, rhs.val), nil
 
 	case tokIdent:
+		if op == "<" || op == ">" || op == "<=" || op == ">=" {
+			return 3, fmt.Sprintf(`Facts.GetNum("%s") %s Facts.GetNum("%s")`, ident, op, rhs.val), nil
+		}
 		return 3, fmt.Sprintf(`Facts.GetStr("%s") %s Facts.GetStr("%s")`, ident, op, rhs.val), nil
 
 	default:

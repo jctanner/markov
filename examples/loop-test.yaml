@@ -1,0 +1,100 @@
+---
+# Loop via recursion — three workflows demonstrating recursive
+# workflow invocation controlled by the rule engine.
+#
+# Workflow structure:
+#   main → iterate → do_work
+#            ↑           │
+#            └───────────┘  (recurse if gate says continue)
+#
+# "main" is the entrypoint — it initializes and hands off to
+# "iterate". "iterate" runs the gate, calls "do_work" if
+# continuing, then re-invokes itself with an incremented counter.
+# "do_work" does the per-iteration logic.
+#
+# The gate evaluates two rules:
+#   - loop_continue (salience 10): fires when iteration < 10
+#   - loop_exit (salience 100): fires when iteration >= 10
+#
+# Expected output: 10 iterations (0–9), then exit.
+
+entrypoint: main
+
+vars:
+  iteration: 0
+  max_iterations: 10
+
+rules:
+  - name: loop_continue
+    description: "Keep looping while under the limit"
+    salience: 10
+    when: "iteration < max_iterations"
+    action: continue
+    set_fact:
+      loop_done: false
+
+  - name: loop_exit
+    description: "Stop when iteration limit is reached"
+    salience: 100
+    when: "iteration >= max_iterations"
+    action: skip
+    set_fact:
+      loop_done: true
+
+workflows:
+  - name: main
+    steps:
+      - name: start
+        type: shell_exec
+        params:
+          command: echo
+          args: ["starting loop (max_iterations={{ max_iterations }})"]
+
+      - name: run_loop
+        workflow: iterate
+        vars:
+          iteration: "{{ iteration }}"
+
+      - name: finish
+        type: shell_exec
+        params:
+          command: echo
+          args: ["loop complete after {{ iteration }} iterations"]
+
+  - name: iterate
+    vars:
+      iteration: null
+    steps:
+      - name: loop_gate
+        type: gate
+        rules:
+          - loop_continue
+          - loop_exit
+
+      - name: run_work
+        workflow: do_work
+        when: "not loop_done"
+        vars:
+          iteration: "{{ iteration }}"
+
+      - name: increment
+        type: set_fact
+        when: "not loop_done"
+        vars:
+          iteration: "{{ iteration + 1 }}"
+
+      - name: next_iteration
+        workflow: iterate
+        when: "not loop_done"
+        vars:
+          iteration: "{{ iteration }}"
+
+  - name: do_work
+    vars:
+      iteration: null
+    steps:
+      - name: show_iteration
+        type: shell_exec
+        params:
+          command: echo
+          args: ["  working on iteration {{ iteration }}"]

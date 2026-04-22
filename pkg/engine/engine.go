@@ -468,7 +468,11 @@ func (e *Engine) executeSubWorkflow(ctx context.Context, runID string, workflowN
 			return fmt.Errorf("rendering sub-workflow vars: %w", err)
 		}
 		for k, v := range rendered {
-			subVars[k] = v
+			if s, ok := v.(string); ok {
+				subVars[k] = coerceString(s)
+			} else {
+				subVars[k] = v
+			}
 		}
 	}
 
@@ -567,7 +571,11 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 						return
 					}
 					for k, v := range rendered {
-						subVars[k] = v
+						if s, ok := v.(string); ok {
+							subVars[k] = coerceString(s)
+						} else {
+							subVars[k] = v
+						}
 					}
 				}
 
