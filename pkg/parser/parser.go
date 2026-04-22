@@ -96,6 +96,7 @@ var primitives = map[string]bool{
 	"shell_exec":    true,
 	"gate":          true,
 	"load_artifact": true,
+	"set_fact":      true,
 }
 
 func resolveType(wf *WorkflowFile, typeName string) error {

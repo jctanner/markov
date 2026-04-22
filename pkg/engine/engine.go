@@ -123,7 +123,13 @@ func (e *Engine) Resume(ctx context.Context, runID string) error {
 	}
 	for _, s := range steps {
 		if s.Status == state.StepCompleted {
-			if s.ArtifactsJSON != "" {
+			if isSetFactStep(wf, s.StepName) && s.OutputJSON != "" {
+				var facts map[string]any
+				json.Unmarshal([]byte(s.OutputJSON), &facts)
+				for k, v := range facts {
+					runCtx[k] = v
+				}
+			} else if s.ArtifactsJSON != "" {
 				var stepData map[string]any
 				json.Unmarshal([]byte(s.ArtifactsJSON), &stepData)
 				runCtx[s.StepName] = stepData
@@ -170,7 +176,11 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 		if existing.OutputJSON != "" {
 			var output map[string]any
 			json.Unmarshal([]byte(existing.OutputJSON), &output)
-			if step.Register != "" {
+			if step.Type == "set_fact" {
+				for k, v := range output {
+					runCtx[k] = v
+				}
+			} else if step.Register != "" {
 				runCtx[step.Register] = output
 			}
 		}
@@ -208,6 +218,34 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 	now := time.Now()
 
 	base, mergedParams := e.file.ResolveStepType(&step)
+
+	if base == "set_fact" {
+		log.Printf("[run:%s] setting facts for step %q", runID, step.Name)
+		if len(step.Vars) == 0 {
+			return e.failStep(ctx, runID, workflowName, step.Name, fmt.Errorf("set_fact step has no vars defined"))
+		}
+		facts, err := e.evalFacts(step.Vars, runCtx)
+		if err != nil {
+			return e.failStep(ctx, runID, workflowName, step.Name, fmt.Errorf("evaluating facts: %w", err))
+		}
+		for k, v := range facts {
+			runCtx[k] = v
+			e.verbose("[run:%s]   %s = %v", runID, k, v)
+		}
+		factsJSON, _ := json.Marshal(facts)
+		completed := time.Now()
+		e.store.SaveStep(ctx, &state.StepResult{
+			RunID:        runID,
+			WorkflowName: workflowName,
+			StepName:     step.Name,
+			Status:       state.StepCompleted,
+			OutputJSON:   string(factsJSON),
+			StartedAt:    &now,
+			CompletedAt:  &completed,
+		})
+		log.Printf("[run:%s] step %q completed", runID, step.Name)
+		return nil
+	}
 
 	if base == "load_artifact" {
 		log.Printf("[run:%s] loading artifacts for step %q", runID, step.Name)
@@ -590,6 +628,15 @@ func (e *Engine) failStep(ctx context.Context, runID, workflowName, stepName str
 		CompletedAt:  &now,
 	})
 	return err
+}
+
+func isSetFactStep(wf *parser.Workflow, stepName string) bool {
+	for _, s := range wf.Steps {
+		if s.Name == stepName {
+			return s.Type == "set_fact"
+		}
+	}
+	return false
 }
 
 func (e *Engine) buildContext(cliVars map[string]any, workflowVars map[string]any) map[string]any {

@@ -4,7 +4,7 @@
 # Flow:
 #   1. check_existing  — look for prior review artifact (skip speedrun if exists)
 #   2. rfe_speedrun    — run rfe.speedrun skill (creates RFE task + review)
-#   3. load_results    — load task and review artifacts from shared volume
+#   3. load_rfe_results    — load task and review artifacts from shared volume
 #   4. rfe_submit      — submit RFE if review passed
 #   5. strategy_create — create strategy doc if RFE was submitted
 
@@ -125,7 +125,7 @@ workflows:
             - "{{ model }}"
 
       # Load the full set of artifacts
-      - name: load_results
+      - name: load_rfe_results
         type: load_artifact
         artifacts:
           task:
@@ -137,10 +137,28 @@ workflows:
             format: markdown
             source: k8s
 
-      # Submit the RFE if the review passed, not rejected, and not already submitted
+      # Check if a strategy ticket already exists for this RFE
+      - name: check_strat_exists
+        type: load_artifact
+        artifacts:
+          tickets:
+            path: "/app/artifacts/strat-tickets.md"
+            format: markdown_table
+            source: k8s
+            optional: true
+
+      # Compute reusable decision variables from artifact data
+      - name: eval_conditions
+        type: set_fact
+        vars:
+          review_passed: "load_rfe_results.artifacts.review.frontmatter.pass == true and load_rfe_results.artifacts.review.frontmatter.recommendation != 'reject'"
+          already_submitted: "load_rfe_results.artifacts.task.frontmatter.status == 'Submitted'"
+          strat_exists: "check_strat_exists.artifacts.tickets != None and (issue in check_strat_exists.artifacts.tickets.rfe_source)"
+
+      # Submit the RFE if the review passed and not already submitted
       - name: rfe_submit
         type: agent_job
-        when: "load_results.artifacts.review.frontmatter.pass == true and load_results.artifacts.review.frontmatter.recommendation != 'reject' and load_results.artifacts.task.frontmatter.status != 'Submitted'"
+        when: "review_passed and not already_submitted"
         params:
           command: ["/bin/bash"]
           args:
@@ -152,20 +170,10 @@ workflows:
             - --model
             - "{{ model }}"
 
-      # Check if a strategy ticket already exists for this RFE
-      - name: check_strat_exists
-        type: load_artifact
-        artifacts:
-          tickets:
-            path: "/app/artifacts/strat-tickets.md"
-            format: markdown_table
-            source: k8s
-            optional: true
-
       # Add the strat-creator label to the Jira ticket before strategy creation
       - name: add_strat_label
         type: agent_job
-        when: "load_results.artifacts.review.frontmatter.pass == true and load_results.artifacts.review.frontmatter.recommendation != 'reject' and (check_strat_exists.artifacts.tickets == None or not (issue in check_strat_exists.artifacts.tickets.rfe_source))"
+        when: "review_passed and not strat_exists"
         params:
           command: ["/bin/sh", "-c"]
           args:
@@ -180,7 +188,7 @@ workflows:
       # ederign/strat-creator@main:strategy-create
       - name: strategy_create
         type: agent_job
-        when: "load_results.artifacts.review.frontmatter.pass == true and load_results.artifacts.review.frontmatter.recommendation != 'reject' and (check_strat_exists.artifacts.tickets == None or not (issue in check_strat_exists.artifacts.tickets.rfe_source))"
+        when: "review_passed and not strat_exists"
         params:
           command: ["/bin/bash"]
           args:
