@@ -13,7 +13,10 @@ A Go-based YAML workflow engine for Kubernetes. Define workflows declaratively, 
 - **Sub-workflows** — invoke named workflows inline, with or without `for_each`
 - **Conditionals** — `when:` expressions to skip or run steps
 - **Template rendering** — Jinja2-compatible (pongo2) for params and expressions
-- **Artifact loading** — load YAML and markdown files from shared volumes; use parsed data in conditions
+- **Artifact loading** — load YAML, markdown, and markdown table files from local or K8s volumes; use parsed data in conditions
+- **`set_fact`** — compute and store variables from expressions or table lookups for use in downstream steps
+- **`assert`** — validate conditions and fail the workflow with a message if any are false
+- **Rule engine / gates** — define named rules with salience-based priority; gate steps evaluate rules with forward chaining, set facts, and control flow (continue/skip/pause)
 - **Checkpoint/resume** — SQLite state store; resume failed runs from the last successful step
 - **K8s native** — creates `batch/v1` Jobs directly (no Argo dependency)
 
@@ -29,7 +32,8 @@ model is fundamentally different.
 | **Execution** | Runs modules on hosts | Creates K8s Jobs, polls for completion |
 | **State** | Stateless between runs | SQLite checkpoint/resume |
 | **Concurrency** | Forks across hosts | Forks across sub-workflows (fan-out) |
-| **Data flow** | Register + facts | Register + artifact loading from shared volumes |
+| **Data flow** | Register + facts | Register + artifact loading + set_fact + rule engine |
+| **Decision logic** | `when:` conditionals only | `when:` + gate steps with salience-ordered rules |
 | **Scope** | General-purpose IT automation | Long-running AI/ML pipeline orchestration |
 
 Ansible SSHes into machines and runs Python modules. Markov creates K8s Jobs
@@ -115,8 +119,8 @@ workflows:
 
 ```
 cmd/markov/          CLI entrypoint
-pkg/engine/          Workflow execution engine
-pkg/parser/          YAML parsing and validation
+pkg/engine/          Workflow execution, gate evaluation, artifact loading, facts
+pkg/parser/          YAML parsing, validation, rule loading
 pkg/executor/        Step executors (k8s_job, shell_exec, http_request)
 pkg/state/           Checkpoint store (SQLite)
 pkg/template/        Pongo2 template rendering
