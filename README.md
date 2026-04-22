@@ -5,12 +5,16 @@
 
 A Go-based YAML workflow engine for Kubernetes. Define workflows declaratively, and Markov executes them as K8s Jobs, HTTP requests, or shell commands with built-in concurrency, conditionals, and checkpoint/resume.
 
+## Why "Markov"?
+
+A [Markov chain](https://en.wikipedia.org/wiki/Markov_chain) is a system that transitions between states based on its current state. Markov workflows work the same way: gate steps evaluate rules against the current state, decide the next transition (continue, skip, or pause), and workflows can recursively invoke themselves — looping until the rules say to stop. The result is a declarative state machine where each iteration's next move depends only on the facts right now, not the history of how it got there.
+
 ## Features
 
 - **Declarative YAML workflows** — multiple workflows per file with an entrypoint
 - **User-defined step types** — compose reusable types from engine primitives (`k8s_job`, `http_request`, `shell_exec`, `load_artifact`)
 - **Fan-out / fan-in** — `for_each` with sliding-window concurrency control (`forks`)
-- **Sub-workflows** — invoke named workflows inline, with or without `for_each`
+- **Sub-workflows & recursion** — invoke named workflows inline; workflows can call themselves to loop, controlled by gate rules
 - **Conditionals** — `when:` expressions to skip or run steps
 - **Template rendering** — Jinja2-compatible (pongo2) for params and expressions
 - **Artifact loading** — load YAML, markdown, and markdown table files from local or K8s volumes; use parsed data in conditions
