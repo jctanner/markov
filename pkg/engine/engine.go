@@ -28,6 +28,7 @@ type Engine struct {
 	restConfig *rest.Config
 	forks      int
 	Verbose    bool
+	RunID      string
 	callbacks  []callback.Callback
 }
 
@@ -63,6 +64,7 @@ func (e *Engine) CloseCallbacks() {
 }
 
 func (e *Engine) fireEvent(fn func(callback.Callback) error) {
+	e.verbose("firing callback event to %d callback(s)", len(e.callbacks))
 	for _, cb := range e.callbacks {
 		if err := fn(cb); err != nil {
 			log.Printf("callback error: %v", err)
@@ -88,7 +90,10 @@ func (e *Engine) Run(ctx context.Context, workflowName string, vars map[string]a
 
 	runCtx := e.buildContext(vars, wf.Vars)
 
-	runID := uuid.New().String()[:8]
+	runID := e.RunID
+	if runID == "" {
+		runID = uuid.New().String()[:8]
+	}
 	varsJSON, _ := json.Marshal(runCtx)
 
 	run := &state.Run{

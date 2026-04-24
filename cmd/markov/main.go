@@ -32,10 +32,18 @@ var (
 	flagCallbackTLSInsecure bool
 	flagCallbackTLSCert    string
 	flagCallbackBufferSize int
+	flagDebug              bool
+	flagRunID              string
 
 	saTokenPath     = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 	saNamespacePath = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 )
+
+func debugLog(format string, args ...any) {
+	if flagDebug {
+		log.Printf("[debug] "+format, args...)
+	}
+}
 
 func defaultStateStorePath() string {
 	if _, err := os.Stat(saTokenPath); err == nil {
@@ -65,6 +73,8 @@ func main() {
 	runCmd.Flags().StringVar(&flagNamespace, "namespace", "", "Override K8s namespace")
 	runCmd.Flags().StringVar(&flagKubeconfig, "kubeconfig", "", "K8s config path")
 	runCmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Show detailed execution output")
+	runCmd.Flags().BoolVar(&flagDebug, "debug", false, "Show debug logging for flag parsing, callback setup, and K8s client init")
+	runCmd.Flags().StringVar(&flagRunID, "run-id", "", "Use a specific run ID instead of generating one")
 	runCmd.Flags().StringArrayVar(&flagCallbacks, "callback", nil, "Callback destination URL (repeatable). Schemes: jsonl://, http://, https://, grpc://, grpcs://")
 	runCmd.Flags().StringArrayVar(&flagCallbackHeaders, "callback-header", nil, "Extra HTTP headers for http callbacks (key=value, repeatable)")
 	runCmd.Flags().BoolVar(&flagCallbackTLSInsecure, "callback-tls-insecure", false, "Skip TLS verification for callback connections")
@@ -119,6 +129,16 @@ func main() {
 }
 
 func runWorkflow(cmd *cobra.Command, args []string) error {
+	if flagDebug {
+		flagVerbose = true
+	}
+
+	debugLog("flags: --run-id=%q --workflow=%q --namespace=%q --kubeconfig=%q --state-store=%q --forks=%d --verbose=%v",
+		flagRunID, flagWorkflow, flagNamespace, flagKubeconfig, flagStateStore, flagForks, flagVerbose)
+	debugLog("flags: --callback=%v --callback-header=%v --callback-tls-insecure=%v --callback-buffer-size=%d",
+		flagCallbacks, flagCallbackHeaders, flagCallbackTLSInsecure, flagCallbackBufferSize)
+	debugLog("flags: --var=%v", flagVars)
+
 	wfFile, err := parser.ParseFile(args[0])
 	if err != nil {
 		return err
@@ -133,6 +153,7 @@ func runWorkflow(cmd *cobra.Command, args []string) error {
 
 	vars := parseVarFlags(flagVars)
 
+	debugLog("state store: %s", flagStateStore)
 	store, err := state.NewSQLiteStore(flagStateStore)
 	if err != nil {
 		return err
@@ -146,11 +167,13 @@ func runWorkflow(cmd *cobra.Command, args []string) error {
 
 	eng := engine.New(wfFile, store, executors)
 	eng.Verbose = flagVerbose
+	eng.RunID = flagRunID
 
 	cbs, err := buildCallbacks()
 	if err != nil {
 		return err
 	}
+	debugLog("callbacks: %d created from %d --callback flags", len(cbs), len(flagCallbacks))
 	if len(cbs) > 0 {
 		eng.SetCallbacks(cbs)
 		defer eng.CloseCallbacks()
@@ -159,6 +182,8 @@ func runWorkflow(cmd *cobra.Command, args []string) error {
 	k8sClient, restCfg, err := getK8sClient()
 	if err == nil {
 		eng.SetK8sClient(k8sClient, restCfg)
+	} else {
+		debugLog("k8s client: unavailable: %v", err)
 	}
 
 	ctx := context.Background()
@@ -317,10 +342,12 @@ func buildCallbacks() ([]callback.Callback, error) {
 
 	var cbs []callback.Callback
 	for _, u := range flagCallbacks {
+		debugLog("callback: parsing %q", u)
 		cb, err := callback.ParseCallbackURL(u, headers, flagCallbackBufferSize, flagCallbackTLSInsecure, flagCallbackTLSCert)
 		if err != nil {
 			return nil, fmt.Errorf("parsing callback %q: %w", u, err)
 		}
+		debugLog("callback: created %T for %s", cb, u)
 		cbs = append(cbs, cb)
 	}
 	return cbs, nil
@@ -339,18 +366,22 @@ func parseVarFlags(vars []string) map[string]any {
 
 func resolveNamespace(wfNamespace, flagNS string) string {
 	ns := wfNamespace
-	if ns == "" {
-		ns = flagNS
+	if ns != "" {
+		debugLog("namespace: using workflow namespace %q", ns)
+		return ns
 	}
-	if ns == "" {
-		if data, err := os.ReadFile(saNamespacePath); err == nil {
-			ns = strings.TrimSpace(string(data))
-		}
+	ns = flagNS
+	if ns != "" {
+		debugLog("namespace: using --namespace flag %q", ns)
+		return ns
 	}
-	if ns == "" {
-		ns = "default"
+	if data, err := os.ReadFile(saNamespacePath); err == nil {
+		ns = strings.TrimSpace(string(data))
+		debugLog("namespace: using service account namespace %q", ns)
+		return ns
 	}
-	return ns
+	debugLog("namespace: using default")
+	return "default"
 }
 
 func buildExecutors(wf *parser.WorkflowFile) (map[string]executor.Executor, error) {
@@ -368,17 +399,27 @@ func buildExecutors(wf *parser.WorkflowFile) (map[string]executor.Executor, erro
 		executors["k8s_job"] = executor.NewK8sJob(k8sClient, namespace)
 	}
 
+	debugLog("executors: registered %v", func() []string {
+		names := make([]string, 0, len(executors))
+		for k := range executors {
+			names = append(names, k)
+		}
+		return names
+	}())
+
 	return executors, nil
 }
 
 func getK8sClient() (kubernetes.Interface, *rest.Config, error) {
 	if restConfig, err := rest.InClusterConfig(); err == nil {
+		debugLog("k8s client: using in-cluster config (host=%s)", restConfig.Host)
 		client, err := kubernetes.NewForConfig(restConfig)
 		if err != nil {
 			return nil, nil, err
 		}
 		return client, restConfig, nil
 	}
+	debugLog("k8s client: in-cluster config not available, trying kubeconfig")
 
 	kubeconfig := flagKubeconfig
 	if kubeconfig == "" {
@@ -386,6 +427,7 @@ func getK8sClient() (kubernetes.Interface, *rest.Config, error) {
 	}
 
 	var config *clientcmd.ClientConfig
+	debugLog("k8s client: kubeconfig=%q", kubeconfig)
 	if kubeconfig != "" {
 		c := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 			&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfig},
