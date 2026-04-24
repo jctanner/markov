@@ -32,9 +32,21 @@ var (
 	flagCallbackTLSInsecure bool
 	flagCallbackTLSCert    string
 	flagCallbackBufferSize int
+
+	saTokenPath     = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+	saNamespacePath = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 )
 
+func defaultStateStorePath() string {
+	if _, err := os.Stat(saTokenPath); err == nil {
+		return "/tmp/markov-state.db"
+	}
+	return "./markov-state.db"
+}
+
 func main() {
+	stateStorePath := defaultStateStorePath()
+
 	root := &cobra.Command{
 		Use:   "markov",
 		Short: "YAML workflow engine for Kubernetes",
@@ -49,7 +61,7 @@ func main() {
 	runCmd.Flags().StringArrayVar(&flagVars, "var", nil, "Override vars (key=value, repeatable)")
 	runCmd.Flags().StringVar(&flagWorkflow, "workflow", "", "Run a specific workflow instead of entrypoint")
 	runCmd.Flags().IntVar(&flagForks, "forks", 0, "Override global forks")
-	runCmd.Flags().StringVar(&flagStateStore, "state-store", "./markov-state.db", "SQLite state store path")
+	runCmd.Flags().StringVar(&flagStateStore, "state-store", stateStorePath, "SQLite state store path")
 	runCmd.Flags().StringVar(&flagNamespace, "namespace", "", "Override K8s namespace")
 	runCmd.Flags().StringVar(&flagKubeconfig, "kubeconfig", "", "K8s config path")
 	runCmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Show detailed execution output")
@@ -65,7 +77,7 @@ func main() {
 		Args:  cobra.ExactArgs(1),
 		RunE:  resumeWorkflow,
 	}
-	resumeCmd.Flags().StringVar(&flagStateStore, "state-store", "./markov-state.db", "SQLite state store path")
+	resumeCmd.Flags().StringVar(&flagStateStore, "state-store", stateStorePath, "SQLite state store path")
 
 	statusCmd := &cobra.Command{
 		Use:   "status <run_id>",
@@ -73,7 +85,7 @@ func main() {
 		Args:  cobra.ExactArgs(1),
 		RunE:  showStatus,
 	}
-	statusCmd.Flags().StringVar(&flagStateStore, "state-store", "./markov-state.db", "SQLite state store path")
+	statusCmd.Flags().StringVar(&flagStateStore, "state-store", stateStorePath, "SQLite state store path")
 	statusCmd.Flags().BoolVar(&flagSteps, "steps", false, "Show individual step statuses")
 
 	listCmd := &cobra.Command{
@@ -82,7 +94,7 @@ func main() {
 		Args:  cobra.NoArgs,
 		RunE:  listRuns,
 	}
-	listCmd.Flags().StringVar(&flagStateStore, "state-store", "./markov-state.db", "SQLite state store path")
+	listCmd.Flags().StringVar(&flagStateStore, "state-store", stateStorePath, "SQLite state store path")
 
 	validateCmd := &cobra.Command{
 		Use:   "validate <file.yaml>",
@@ -97,7 +109,7 @@ func main() {
 		Args:  cobra.ExactArgs(1),
 		RunE:  showDiagram,
 	}
-	diagramCmd.Flags().StringVar(&flagStateStore, "state-store", "./markov-state.db", "SQLite state store path")
+	diagramCmd.Flags().StringVar(&flagStateStore, "state-store", stateStorePath, "SQLite state store path")
 
 	root.AddCommand(runCmd, resumeCmd, statusCmd, listCmd, validateCmd, diagramCmd)
 
@@ -325,16 +337,29 @@ func parseVarFlags(vars []string) map[string]any {
 	return result
 }
 
+func resolveNamespace(wfNamespace, flagNS string) string {
+	ns := wfNamespace
+	if ns == "" {
+		ns = flagNS
+	}
+	if ns == "" {
+		if data, err := os.ReadFile(saNamespacePath); err == nil {
+			ns = strings.TrimSpace(string(data))
+		}
+	}
+	if ns == "" {
+		ns = "default"
+	}
+	return ns
+}
+
 func buildExecutors(wf *parser.WorkflowFile) (map[string]executor.Executor, error) {
 	executors := map[string]executor.Executor{
 		"shell_exec":   executor.NewShellExec(),
 		"http_request": executor.NewHTTPRequest(),
 	}
 
-	namespace := wf.Namespace
-	if namespace == "" {
-		namespace = "default"
-	}
+	namespace := resolveNamespace(wf.Namespace, flagNamespace)
 
 	k8sClient, _, err := getK8sClient()
 	if err != nil {
@@ -347,6 +372,14 @@ func buildExecutors(wf *parser.WorkflowFile) (map[string]executor.Executor, erro
 }
 
 func getK8sClient() (kubernetes.Interface, *rest.Config, error) {
+	if restConfig, err := rest.InClusterConfig(); err == nil {
+		client, err := kubernetes.NewForConfig(restConfig)
+		if err != nil {
+			return nil, nil, err
+		}
+		return client, restConfig, nil
+	}
+
 	kubeconfig := flagKubeconfig
 	if kubeconfig == "" {
 		kubeconfig = os.Getenv("KUBECONFIG")

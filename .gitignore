@@ -2,6 +2,7 @@ kubeconfig.yaml
 *.db
 *.swp
 /markov
+bin/
 references/**/*.gz
 references/cosim-workflow-poc/chain-dag-visualizer/
 references/cosim-workflow-poc/claude-k8s-workflow-poc/

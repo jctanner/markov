@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -40,9 +41,14 @@ func (e *K8sJob) Execute(ctx context.Context, params map[string]any) (*Result, e
 	jobName := created.Name
 	err = e.waitForCompletion(ctx, ns, jobName)
 
+	logs := e.getPodLogs(ctx, ns, jobName)
+
 	output := map[string]any{
 		"job_name":  jobName,
 		"namespace": ns,
+	}
+	if logs != "" {
+		output["logs"] = logs
 	}
 
 	if err != nil {
@@ -395,6 +401,32 @@ func toInt32(val any) int32 {
 		return int32(v)
 	}
 	return 0
+}
+
+const maxLogBytes = 64 * 1024
+
+func (e *K8sJob) getPodLogs(ctx context.Context, namespace, jobName string) string {
+	pods, err := e.client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("job-name=%s", jobName),
+	})
+	if err != nil || len(pods.Items) == 0 {
+		return ""
+	}
+
+	var limitBytes int64 = maxLogBytes
+	stream, err := e.client.CoreV1().Pods(namespace).GetLogs(pods.Items[0].Name, &corev1.PodLogOptions{
+		LimitBytes: &limitBytes,
+	}).Stream(ctx)
+	if err != nil {
+		return ""
+	}
+	defer stream.Close()
+
+	data, err := io.ReadAll(stream)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 func (e *K8sJob) waitForCompletion(ctx context.Context, namespace, jobName string) error {
