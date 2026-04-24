@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/jctanner/markov/pkg/callback"
 	"github.com/jctanner/markov/pkg/engine"
 	"github.com/jctanner/markov/pkg/executor"
 	"github.com/jctanner/markov/pkg/parser"
@@ -24,8 +25,13 @@ var (
 	flagStateStore string
 	flagNamespace  string
 	flagKubeconfig string
-	flagSteps      bool
-	flagVerbose    bool
+	flagSteps              bool
+	flagVerbose            bool
+	flagCallbacks          []string
+	flagCallbackHeaders    []string
+	flagCallbackTLSInsecure bool
+	flagCallbackTLSCert    string
+	flagCallbackBufferSize int
 )
 
 func main() {
@@ -47,6 +53,11 @@ func main() {
 	runCmd.Flags().StringVar(&flagNamespace, "namespace", "", "Override K8s namespace")
 	runCmd.Flags().StringVar(&flagKubeconfig, "kubeconfig", "", "K8s config path")
 	runCmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Show detailed execution output")
+	runCmd.Flags().StringArrayVar(&flagCallbacks, "callback", nil, "Callback destination URL (repeatable). Schemes: jsonl://, http://, https://, grpc://, grpcs://")
+	runCmd.Flags().StringArrayVar(&flagCallbackHeaders, "callback-header", nil, "Extra HTTP headers for http callbacks (key=value, repeatable)")
+	runCmd.Flags().BoolVar(&flagCallbackTLSInsecure, "callback-tls-insecure", false, "Skip TLS verification for callback connections")
+	runCmd.Flags().StringVar(&flagCallbackTLSCert, "callback-tls-cert", "", "Client TLS certificate for callback connections")
+	runCmd.Flags().IntVar(&flagCallbackBufferSize, "callback-buffer-size", 1000, "Async send buffer size for callbacks")
 
 	resumeCmd := &cobra.Command{
 		Use:   "resume <run_id>",
@@ -123,6 +134,15 @@ func runWorkflow(cmd *cobra.Command, args []string) error {
 
 	eng := engine.New(wfFile, store, executors)
 	eng.Verbose = flagVerbose
+
+	cbs, err := buildCallbacks()
+	if err != nil {
+		return err
+	}
+	if len(cbs) > 0 {
+		eng.SetCallbacks(cbs)
+		defer eng.CloseCallbacks()
+	}
 
 	k8sClient, restCfg, err := getK8sClient()
 	if err == nil {
@@ -268,6 +288,30 @@ func validateWorkflow(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println("valid")
 	return nil
+}
+
+func buildCallbacks() ([]callback.Callback, error) {
+	if len(flagCallbacks) == 0 {
+		return nil, nil
+	}
+
+	headers := make(map[string]string)
+	for _, h := range flagCallbackHeaders {
+		parts := strings.SplitN(h, "=", 2)
+		if len(parts) == 2 {
+			headers[parts[0]] = parts[1]
+		}
+	}
+
+	var cbs []callback.Callback
+	for _, u := range flagCallbacks {
+		cb, err := callback.ParseCallbackURL(u, headers, flagCallbackBufferSize, flagCallbackTLSInsecure, flagCallbackTLSCert)
+		if err != nil {
+			return nil, fmt.Errorf("parsing callback %q: %w", u, err)
+		}
+		cbs = append(cbs, cb)
+	}
+	return cbs, nil
 }
 
 func parseVarFlags(vars []string) map[string]any {

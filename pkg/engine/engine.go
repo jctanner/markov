@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jctanner/markov/pkg/callback"
 	"github.com/jctanner/markov/pkg/executor"
 	"github.com/jctanner/markov/pkg/parser"
 	"github.com/jctanner/markov/pkg/state"
@@ -27,6 +28,7 @@ type Engine struct {
 	restConfig *rest.Config
 	forks      int
 	Verbose    bool
+	callbacks  []callback.Callback
 }
 
 func New(file *parser.WorkflowFile, store state.Store, executors map[string]executor.Executor) *Engine {
@@ -46,6 +48,26 @@ func New(file *parser.WorkflowFile, store state.Store, executors map[string]exec
 func (e *Engine) SetK8sClient(client kubernetes.Interface, cfg *rest.Config) {
 	e.k8s = client
 	e.restConfig = cfg
+}
+
+func (e *Engine) SetCallbacks(cbs []callback.Callback) {
+	e.callbacks = cbs
+}
+
+func (e *Engine) CloseCallbacks() {
+	for _, cb := range e.callbacks {
+		if err := cb.Close(); err != nil {
+			log.Printf("callback close error: %v", err)
+		}
+	}
+}
+
+func (e *Engine) fireEvent(fn func(callback.Callback) error) {
+	for _, cb := range e.callbacks {
+		if err := fn(cb); err != nil {
+			log.Printf("callback error: %v", err)
+		}
+	}
 }
 
 func (e *Engine) verbose(format string, args ...any) {
@@ -81,6 +103,16 @@ func (e *Engine) Run(ctx context.Context, workflowName string, vars map[string]a
 		return "", fmt.Errorf("creating run: %w", err)
 	}
 
+	e.fireEvent(func(cb callback.Callback) error {
+		return cb.OnRunStarted(callback.RunStartedEvent{
+			EventHeader:  callback.EventHeader{Timestamp: run.StartedAt, RunID: runID, EventType: "run_started"},
+			WorkflowName: workflowName,
+			Vars:         runCtx,
+			Forks:        e.forks,
+			Namespace:    e.file.Namespace,
+		})
+	})
+
 	log.Printf("[run:%s] starting workflow %q", runID, workflowName)
 	e.verbose("[run:%s]   forks: %d", runID, e.forks)
 	e.verbose("[run:%s]   namespace: %s", runID, e.file.Namespace)
@@ -91,12 +123,28 @@ func (e *Engine) Run(ctx context.Context, workflowName string, vars map[string]a
 
 	now := time.Now()
 	run.CompletedAt = &now
+	duration := now.Sub(run.StartedAt).Seconds()
 	if err != nil {
 		run.Status = state.RunFailed
 		log.Printf("[run:%s] workflow %q failed: %v", runID, workflowName, err)
+		e.fireEvent(func(cb callback.Callback) error {
+			return cb.OnRunFailed(callback.RunFailedEvent{
+				EventHeader:  callback.EventHeader{Timestamp: now, RunID: runID, EventType: "run_failed"},
+				WorkflowName: workflowName,
+				Error:        err.Error(),
+				Duration:     duration,
+			})
+		})
 	} else {
 		run.Status = state.RunCompleted
 		log.Printf("[run:%s] workflow %q completed", runID, workflowName)
+		e.fireEvent(func(cb callback.Callback) error {
+			return cb.OnRunCompleted(callback.RunCompletedEvent{
+				EventHeader:  callback.EventHeader{Timestamp: now, RunID: runID, EventType: "run_completed"},
+				WorkflowName: workflowName,
+				Duration:     duration,
+			})
+		})
 	}
 	e.store.UpdateRun(ctx, run)
 
@@ -152,16 +200,48 @@ func (e *Engine) Resume(ctx context.Context, runID string) error {
 	run.Status = state.RunRunning
 	e.store.UpdateRun(ctx, run)
 
+	completedCount := 0
+	for _, s := range steps {
+		if s.Status == state.StepCompleted {
+			completedCount++
+		}
+	}
+	e.fireEvent(func(cb callback.Callback) error {
+		return cb.OnRunResumed(callback.RunResumedEvent{
+			EventHeader:    callback.EventHeader{Timestamp: time.Now(), RunID: runID, EventType: "run_resumed"},
+			WorkflowName:   run.Entrypoint,
+			CompletedSteps: completedCount,
+			RemainingSteps: len(wf.Steps) - completedCount,
+		})
+	})
+
 	log.Printf("[run:%s] resuming workflow %q", runID, run.Entrypoint)
 
+	resumeStart := time.Now()
 	err = e.executeWorkflow(ctx, runID, wf, runCtx)
 
 	now := time.Now()
 	run.CompletedAt = &now
+	duration := now.Sub(resumeStart).Seconds()
 	if err != nil {
 		run.Status = state.RunFailed
+		e.fireEvent(func(cb callback.Callback) error {
+			return cb.OnRunFailed(callback.RunFailedEvent{
+				EventHeader:  callback.EventHeader{Timestamp: now, RunID: runID, EventType: "run_failed"},
+				WorkflowName: run.Entrypoint,
+				Error:        err.Error(),
+				Duration:     duration,
+			})
+		})
 	} else {
 		run.Status = state.RunCompleted
+		e.fireEvent(func(cb callback.Callback) error {
+			return cb.OnRunCompleted(callback.RunCompletedEvent{
+				EventHeader:  callback.EventHeader{Timestamp: now, RunID: runID, EventType: "run_completed"},
+				WorkflowName: run.Entrypoint,
+				Duration:     duration,
+			})
+		})
 	}
 	e.store.UpdateRun(ctx, run)
 
@@ -217,30 +297,117 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 				StartedAt:    &now,
 				CompletedAt:  &now,
 			})
+			e.fireEvent(func(cb callback.Callback) error {
+				return cb.OnStepSkipped(callback.StepSkippedEvent{
+					EventHeader:  callback.EventHeader{Timestamp: now, RunID: runID, EventType: "step_skipped"},
+					WorkflowName: workflowName,
+					StepName:     step.Name,
+					Reason:       fmt.Sprintf("when condition %q evaluated to false", step.When),
+				})
+			})
 			return nil
 		}
 	}
 
 	if step.ForEach != "" {
-		return e.executeForEach(ctx, runID, workflowName, step, runCtx)
+		feStart := time.Now()
+		e.fireEvent(func(cb callback.Callback) error {
+			return cb.OnStepStarted(callback.StepStartedEvent{
+				EventHeader:  callback.EventHeader{Timestamp: feStart, RunID: runID, EventType: "step_started"},
+				WorkflowName: workflowName,
+				StepName:     step.Name,
+				StepType:     step.Type,
+				ResolvedType: "for_each",
+			})
+		})
+		err := e.executeForEach(ctx, runID, workflowName, step, runCtx)
+		feEnd := time.Now()
+		if err != nil {
+			e.fireEvent(func(cb callback.Callback) error {
+				return cb.OnStepFailed(callback.StepFailedEvent{
+					EventHeader:  callback.EventHeader{Timestamp: feEnd, RunID: runID, EventType: "step_failed"},
+					WorkflowName: workflowName,
+					StepName:     step.Name,
+					StepType:     step.Type,
+					Error:        err.Error(),
+					Duration:     feEnd.Sub(feStart).Seconds(),
+				})
+			})
+			return err
+		}
+		e.fireEvent(func(cb callback.Callback) error {
+			return cb.OnStepCompleted(callback.StepCompletedEvent{
+				EventHeader:  callback.EventHeader{Timestamp: feEnd, RunID: runID, EventType: "step_completed"},
+				WorkflowName: workflowName,
+				StepName:     step.Name,
+				StepType:     step.Type,
+				Duration:     feEnd.Sub(feStart).Seconds(),
+			})
+		})
+		return nil
 	}
 
 	if step.Workflow != "" {
-		return e.executeSubWorkflow(ctx, runID, workflowName, step, runCtx)
+		swStart := time.Now()
+		e.fireEvent(func(cb callback.Callback) error {
+			return cb.OnStepStarted(callback.StepStartedEvent{
+				EventHeader:  callback.EventHeader{Timestamp: swStart, RunID: runID, EventType: "step_started"},
+				WorkflowName: workflowName,
+				StepName:     step.Name,
+				StepType:     step.Type,
+				ResolvedType: "workflow",
+			})
+		})
+		err := e.executeSubWorkflow(ctx, runID, workflowName, step, runCtx)
+		swEnd := time.Now()
+		if err != nil {
+			e.fireEvent(func(cb callback.Callback) error {
+				return cb.OnStepFailed(callback.StepFailedEvent{
+					EventHeader:  callback.EventHeader{Timestamp: swEnd, RunID: runID, EventType: "step_failed"},
+					WorkflowName: workflowName,
+					StepName:     step.Name,
+					StepType:     step.Type,
+					Error:        err.Error(),
+					Duration:     swEnd.Sub(swStart).Seconds(),
+				})
+			})
+			return err
+		}
+		e.fireEvent(func(cb callback.Callback) error {
+			return cb.OnStepCompleted(callback.StepCompletedEvent{
+				EventHeader:  callback.EventHeader{Timestamp: swEnd, RunID: runID, EventType: "step_completed"},
+				WorkflowName: workflowName,
+				StepName:     step.Name,
+				StepType:     step.Type,
+				Duration:     swEnd.Sub(swStart).Seconds(),
+			})
+		})
+		return nil
 	}
 
 	now := time.Now()
 
 	base, mergedParams := e.file.ResolveStepType(&step)
 
+	e.fireEvent(func(cb callback.Callback) error {
+		return cb.OnStepStarted(callback.StepStartedEvent{
+			EventHeader:  callback.EventHeader{Timestamp: now, RunID: runID, EventType: "step_started"},
+			WorkflowName: workflowName,
+			StepName:     step.Name,
+			StepType:     step.Type,
+			ResolvedType: base,
+			Params:       mergedParams,
+		})
+	})
+
 	if base == "set_fact" {
 		log.Printf("[run:%s] setting facts for step %q", runID, step.Name)
 		if len(step.Vars) == 0 {
-			return e.failStep(ctx, runID, workflowName, step.Name, fmt.Errorf("set_fact step has no vars defined"))
+			return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("set_fact step has no vars defined"))
 		}
 		facts, err := e.evalFacts(step.Vars, runCtx)
 		if err != nil {
-			return e.failStep(ctx, runID, workflowName, step.Name, fmt.Errorf("evaluating facts: %w", err))
+			return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("evaluating facts: %w", err))
 		}
 		for k, v := range facts {
 			runCtx[k] = v
@@ -257,6 +424,16 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 			StartedAt:    &now,
 			CompletedAt:  &completed,
 		})
+		e.fireEvent(func(cb callback.Callback) error {
+			return cb.OnStepCompleted(callback.StepCompletedEvent{
+				EventHeader:  callback.EventHeader{Timestamp: completed, RunID: runID, EventType: "step_completed"},
+				WorkflowName: workflowName,
+				StepName:     step.Name,
+				StepType:     step.Type,
+				Output:       facts,
+				Duration:     completed.Sub(now).Seconds(),
+			})
+		})
 		log.Printf("[run:%s] step %q completed", runID, step.Name)
 		return nil
 	}
@@ -264,19 +441,19 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 	if base == "assert" {
 		log.Printf("[run:%s] evaluating assertions for step %q", runID, step.Name)
 		if len(step.That) == 0 {
-			return e.failStep(ctx, runID, workflowName, step.Name, fmt.Errorf("assert step has no conditions defined"))
+			return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("assert step has no conditions defined"))
 		}
 		for _, expr := range step.That {
 			ok, err := e.tmpl.EvalBool(expr, runCtx)
 			if err != nil {
-				return e.failStep(ctx, runID, workflowName, step.Name, fmt.Errorf("evaluating assertion %q: %w", expr, err))
+				return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("evaluating assertion %q: %w", expr, err))
 			}
 			if !ok {
 				msg := step.Msg
 				if msg == "" {
 					msg = fmt.Sprintf("assertion failed: %s", expr)
 				}
-				return e.failStep(ctx, runID, workflowName, step.Name, fmt.Errorf("%s", msg))
+				return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("%s", msg))
 			}
 			e.verbose("[run:%s]   assert %q: ok", runID, expr)
 		}
@@ -289,6 +466,15 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 			StartedAt:    &now,
 			CompletedAt:  &completed,
 		})
+		e.fireEvent(func(cb callback.Callback) error {
+			return cb.OnStepCompleted(callback.StepCompletedEvent{
+				EventHeader:  callback.EventHeader{Timestamp: completed, RunID: runID, EventType: "step_completed"},
+				WorkflowName: workflowName,
+				StepName:     step.Name,
+				StepType:     step.Type,
+				Duration:     completed.Sub(now).Seconds(),
+			})
+		})
 		log.Printf("[run:%s] step %q completed", runID, step.Name)
 		return nil
 	}
@@ -297,8 +483,19 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 		log.Printf("[run:%s] evaluating gate %q (%d rules)", runID, step.Name, len(step.Rules))
 		result, err := e.evaluateGate(runID, step.Rules, step.Facts, runCtx)
 		if err != nil {
-			return e.failStep(ctx, runID, workflowName, step.Name, fmt.Errorf("gate evaluation: %w", err))
+			return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("gate evaluation: %w", err))
 		}
+
+		e.fireEvent(func(cb callback.Callback) error {
+			return cb.OnGateEvaluated(callback.GateEvaluatedEvent{
+				EventHeader:  callback.EventHeader{Timestamp: time.Now(), RunID: runID, EventType: "gate_evaluated"},
+				WorkflowName: workflowName,
+				StepName:     step.Name,
+				Action:       result.Action,
+				FiredRules:   result.FiredRules,
+				Facts:        result.Facts,
+			})
+		})
 
 		log.Printf("[run:%s] gate %q: action=%s, fired=%v", runID, step.Name, result.Action, result.FiredRules)
 
@@ -321,6 +518,15 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 			StartedAt:    &now,
 			CompletedAt:  &completed,
 		})
+		e.fireEvent(func(cb callback.Callback) error {
+			return cb.OnStepCompleted(callback.StepCompletedEvent{
+				EventHeader:  callback.EventHeader{Timestamp: completed, RunID: runID, EventType: "step_completed"},
+				WorkflowName: workflowName,
+				StepName:     step.Name,
+				StepType:     step.Type,
+				Duration:     completed.Sub(now).Seconds(),
+			})
+		})
 		log.Printf("[run:%s] step %q completed", runID, step.Name)
 		return nil
 	}
@@ -328,11 +534,11 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 	if base == "load_artifact" {
 		log.Printf("[run:%s] loading artifacts for step %q", runID, step.Name)
 		if len(step.Artifacts) == 0 {
-			return e.failStep(ctx, runID, workflowName, step.Name, fmt.Errorf("load_artifact step has no artifacts defined"))
+			return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("load_artifact step has no artifacts defined"))
 		}
 		artifacts, err := e.loadArtifacts(step.Artifacts, runCtx)
 		if err != nil {
-			return e.failStep(ctx, runID, workflowName, step.Name, fmt.Errorf("loading artifacts: %w", err))
+			return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("loading artifacts: %w", err))
 		}
 		runCtx[step.Name] = map[string]any{"artifacts": artifacts}
 		e.verbose("[run:%s]   loaded %d artifact(s)", runID, len(artifacts))
@@ -344,6 +550,15 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 			Status:       state.StepCompleted,
 			StartedAt:    &now,
 			CompletedAt:  &completed,
+		})
+		e.fireEvent(func(cb callback.Callback) error {
+			return cb.OnStepCompleted(callback.StepCompletedEvent{
+				EventHeader:  callback.EventHeader{Timestamp: completed, RunID: runID, EventType: "step_completed"},
+				WorkflowName: workflowName,
+				StepName:     step.Name,
+				StepType:     step.Type,
+				Duration:     completed.Sub(now).Seconds(),
+			})
 		})
 		log.Printf("[run:%s] step %q completed", runID, step.Name)
 		return nil
@@ -362,7 +577,7 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 
 	renderedParams, err := e.tmpl.RenderMap(mergedParams, runCtx)
 	if err != nil {
-		return e.failStep(ctx, runID, workflowName, step.Name, fmt.Errorf("rendering params: %w", err))
+		return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("rendering params: %w", err))
 	}
 
 	if base == "k8s_job" {
@@ -386,7 +601,7 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 
 	exec, ok := e.executors[base]
 	if !ok {
-		return e.failStep(ctx, runID, workflowName, step.Name, fmt.Errorf("no executor for type %q", base))
+		return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("no executor for type %q", base))
 	}
 
 	var execCtx context.Context
@@ -401,7 +616,7 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 
 	result, err := exec.Execute(execCtx, renderedParams)
 	if err != nil {
-		return e.failStep(ctx, runID, workflowName, step.Name, err)
+		return e.failStep(ctx, runID, workflowName, step.Name, base, now, err)
 	}
 
 	output := result.Output
@@ -413,7 +628,7 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 	if len(step.Artifacts) > 0 {
 		artifacts, err := e.loadArtifacts(step.Artifacts, runCtx)
 		if err != nil {
-			return e.failStep(ctx, runID, workflowName, step.Name, fmt.Errorf("loading artifacts: %w", err))
+			return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("loading artifacts: %w", err))
 		}
 		stepData := map[string]any{"artifacts": artifacts}
 		if output != nil {
@@ -441,6 +656,17 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 		ArtifactsJSON: artifactsJSON,
 		StartedAt:     &now,
 		CompletedAt:   &completed,
+	})
+
+	e.fireEvent(func(cb callback.Callback) error {
+		return cb.OnStepCompleted(callback.StepCompletedEvent{
+			EventHeader:  callback.EventHeader{Timestamp: completed, RunID: runID, EventType: "step_completed"},
+			WorkflowName: workflowName,
+			StepName:     step.Name,
+			StepType:     step.Type,
+			Output:       output,
+			Duration:     completed.Sub(now).Seconds(),
+		})
 	})
 
 	log.Printf("[run:%s] step %q completed", runID, step.Name)
@@ -489,19 +715,49 @@ func (e *Engine) executeSubWorkflow(ctx context.Context, runID string, workflowN
 	}
 	e.store.CreateRun(ctx, subRun)
 
+	e.fireEvent(func(cb callback.Callback) error {
+		return cb.OnSubRunStarted(callback.SubRunStartedEvent{
+			EventHeader:  callback.EventHeader{Timestamp: subRun.StartedAt, RunID: subRunID, EventType: "sub_run_started"},
+			ParentRunID:  runID,
+			ParentStep:   step.Name,
+			WorkflowName: step.Workflow,
+		})
+	})
+
 	log.Printf("[run:%s] starting sub-workflow %q as %s", runID, step.Workflow, subRunID)
 
 	err := e.executeWorkflow(ctx, subRunID, wf, subVars)
 
-	now := time.Now()
-	subRun.CompletedAt = &now
+	subNow := time.Now()
+	subRun.CompletedAt = &subNow
+	duration := subNow.Sub(subRun.StartedAt).Seconds()
 	if err != nil {
 		subRun.Status = state.RunFailed
 		e.store.UpdateRun(ctx, subRun)
+		e.fireEvent(func(cb callback.Callback) error {
+			return cb.OnSubRunFailed(callback.SubRunFailedEvent{
+				EventHeader:  callback.EventHeader{Timestamp: subNow, RunID: subRunID, EventType: "sub_run_failed"},
+				ParentRunID:  runID,
+				ParentStep:   step.Name,
+				WorkflowName: step.Workflow,
+				Error:        err.Error(),
+				Duration:     duration,
+			})
+		})
 		return err
 	}
 	subRun.Status = state.RunCompleted
 	e.store.UpdateRun(ctx, subRun)
+
+	e.fireEvent(func(cb callback.Callback) error {
+		return cb.OnSubRunCompleted(callback.SubRunCompletedEvent{
+			EventHeader:  callback.EventHeader{Timestamp: subNow, RunID: subRunID, EventType: "sub_run_completed"},
+			ParentRunID:  runID,
+			ParentStep:   step.Name,
+			WorkflowName: step.Workflow,
+			Duration:     duration,
+		})
+	})
 
 	if step.Register != "" {
 		runCtx[step.Register] = subVars
@@ -593,15 +849,48 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 				}
 				e.store.CreateRun(ctx, subRun)
 
+				forEachKey := fmt.Sprintf("%d", idx)
+				e.fireEvent(func(cb callback.Callback) error {
+					return cb.OnSubRunStarted(callback.SubRunStartedEvent{
+						EventHeader:  callback.EventHeader{Timestamp: subRun.StartedAt, RunID: subRunID, EventType: "sub_run_started"},
+						ParentRunID:  runID,
+						ParentStep:   step.Name,
+						WorkflowName: step.Workflow,
+						ForEachKey:   forEachKey,
+					})
+				})
+
 				err := e.executeWorkflow(ctx, subRunID, wf, subVars)
 
-				now := time.Now()
-				subRun.CompletedAt = &now
+				feNow := time.Now()
+				subRun.CompletedAt = &feNow
+				feDuration := feNow.Sub(subRun.StartedAt).Seconds()
 				if err != nil {
 					subRun.Status = state.RunFailed
 					errOnce.Do(func() { firstErr = err })
+					e.fireEvent(func(cb callback.Callback) error {
+						return cb.OnSubRunFailed(callback.SubRunFailedEvent{
+							EventHeader:  callback.EventHeader{Timestamp: feNow, RunID: subRunID, EventType: "sub_run_failed"},
+							ParentRunID:  runID,
+							ParentStep:   step.Name,
+							WorkflowName: step.Workflow,
+							ForEachKey:   forEachKey,
+							Error:        err.Error(),
+							Duration:     feDuration,
+						})
+					})
 				} else {
 					subRun.Status = state.RunCompleted
+					e.fireEvent(func(cb callback.Callback) error {
+						return cb.OnSubRunCompleted(callback.SubRunCompletedEvent{
+							EventHeader:  callback.EventHeader{Timestamp: feNow, RunID: subRunID, EventType: "sub_run_completed"},
+							ParentRunID:  runID,
+							ParentStep:   step.Name,
+							WorkflowName: step.Workflow,
+							ForEachKey:   forEachKey,
+							Duration:     feDuration,
+						})
+					})
 				}
 				e.store.UpdateRun(ctx, subRun)
 
@@ -703,7 +992,7 @@ func (e *Engine) injectJobMeta(params map[string]any, runID, workflowName, stepN
 	params["_labels"] = labels
 }
 
-func (e *Engine) failStep(ctx context.Context, runID, workflowName, stepName string, err error) error {
+func (e *Engine) failStep(ctx context.Context, runID, workflowName, stepName, stepType string, startedAt time.Time, err error) error {
 	now := time.Now()
 	e.store.SaveStep(ctx, &state.StepResult{
 		RunID:        runID,
@@ -711,7 +1000,18 @@ func (e *Engine) failStep(ctx context.Context, runID, workflowName, stepName str
 		StepName:     stepName,
 		Status:       state.StepFailed,
 		Error:        err.Error(),
+		StartedAt:    &startedAt,
 		CompletedAt:  &now,
+	})
+	e.fireEvent(func(cb callback.Callback) error {
+		return cb.OnStepFailed(callback.StepFailedEvent{
+			EventHeader:  callback.EventHeader{Timestamp: now, RunID: runID, EventType: "step_failed"},
+			WorkflowName: workflowName,
+			StepName:     stepName,
+			StepType:     stepType,
+			Error:        err.Error(),
+			Duration:     now.Sub(startedAt).Seconds(),
+		})
 	})
 	return err
 }

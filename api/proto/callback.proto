@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package markov;
+
+option go_package = "github.com/jctanner/markov/api/proto";
+
+import "google/protobuf/timestamp.proto";
+
+service MarkovCallback {
+    rpc SendEvent(CallbackEvent) returns (Ack);
+    rpc StreamEvents(stream CallbackEvent) returns (Ack);
+}
+
+message CallbackEvent {
+    string event_type = 1;
+    string run_id = 2;
+    google.protobuf.Timestamp timestamp = 3;
+    bytes payload = 4;
+}
+
+message Ack {}
