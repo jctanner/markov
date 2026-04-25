@@ -180,9 +180,9 @@ workflows:
       - name: check_strat_exists
         type: load_artifact
         artifacts:
-          tickets:
-            path: "/app/artifacts/strat-tickets.md"
-            format: markdown_table
+          strat_task:
+            path: "/app/artifacts/strat-tasks/{{ issue }}.md"
+            format: markdown
             source: local
             optional: true
 
@@ -194,22 +194,13 @@ workflows:
           review_passed: "load_rfe_results.artifacts.review.frontmatter.pass == true and load_rfe_results.artifacts.review.frontmatter.recommendation != 'reject'"
           review_score: "{{ load_rfe_results.artifacts.review.frontmatter.score }}"
           already_submitted: "load_rfe_results.artifacts.task.frontmatter.status == 'Submitted'"
-          strat_exists: "check_strat_exists.artifacts.tickets != None and (issue in check_strat_exists.artifacts.tickets.rfe_source)"
-          strat_key:
-            from: check_strat_exists.artifacts.tickets.rows
-            match:
-              rfe_source: "{{ issue }}"
-            field: strat_key
+          strat_exists: "check_strat_exists.artifacts.strat_task != None"
+          strat_key: "{{ check_strat_exists.artifacts.strat_task.frontmatter.strat_id }}"
 
       - name: load_strat_artifacts
         type: load_artifact
-        when: "strat_key"
+        when: "strat_exists"
         artifacts:
-          strat_task:
-            path: "/app/artifacts/strat-tasks/{{ strat_key }}.md"
-            format: markdown
-            source: local
-            optional: true
           strat_review:
             path: "/app/artifacts/strat-reviews/{{ strat_key }}-review.md"
             format: markdown
@@ -224,7 +215,7 @@ workflows:
       - name: eval_strat_status
         type: set_fact
         vars:
-          strat_already_refined: "load_strat_artifacts.artifacts.strat_task != None and load_strat_artifacts.artifacts.strat_task.frontmatter.status == 'Refined'"
+          strat_already_refined: "check_strat_exists.artifacts.strat_task.frontmatter.status == 'Refined'"
           strat_already_reviewed: "load_strat_artifacts.artifacts.strat_review != None"
           strat_already_security_reviewed: "load_strat_artifacts.artifacts.security_review != None"
 
