@@ -52,6 +52,12 @@ rules:
     when: "strat_already_reviewed"
     action: skip
 
+  - name: strat_skip_if_security_reviewed
+    description: "Skip security review if already done"
+    salience: 100
+    when: "strat_already_security_reviewed"
+    action: skip
+
 step_types:
   agent_job:
     base: k8s_job
@@ -209,12 +215,18 @@ workflows:
             format: markdown
             source: local
             optional: true
+          security_review:
+            path: "/app/artifacts/security-reviews/{{ strat_key }}-security-review.md"
+            format: markdown
+            source: local
+            optional: true
 
       - name: eval_strat_status
         type: set_fact
         vars:
           strat_already_refined: "load_strat_artifacts.artifacts.strat_task != None and load_strat_artifacts.artifacts.strat_task.frontmatter.status == 'Refined'"
           strat_already_reviewed: "load_strat_artifacts.artifacts.strat_review != None"
+          strat_already_security_reviewed: "load_strat_artifacts.artifacts.security_review != None"
 
       # ── Gates ───────────────────────────────────────────────
 
@@ -306,6 +318,40 @@ workflows:
             - /app/scripts/run_skill.sh
             - --skill
             - strategy-review
+            - --issue
+            - "{{ issue }}"
+            - --model
+            - "{{ model }}"
+
+      - name: load_strat_review_result
+        type: load_artifact
+        when: "not rfe_rejected"
+        artifacts:
+          strat_review_final:
+            path: "/app/artifacts/strat-reviews/{{ strat_key }}-review.md"
+            format: markdown
+            source: local
+
+      - name: eval_review_result
+        type: set_fact
+        when: "not rfe_rejected"
+        vars:
+          strat_review_passed: "load_strat_review_result.artifacts.strat_review_final.frontmatter.recommendation == 'approve'"
+
+      - name: security_review_gate
+        type: gate
+        rules:
+          - strat_skip_if_security_reviewed
+
+      - name: strat_security_review
+        type: agent_job
+        when: "not rfe_rejected and strat_review_passed"
+        params:
+          command: ["/bin/bash"]
+          args:
+            - /app/scripts/run_skill.sh
+            - --skill
+            - strat-security-review
             - --issue
             - "{{ issue }}"
             - --model
