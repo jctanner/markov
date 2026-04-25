@@ -40,18 +40,6 @@ rules:
       rfe_rejected: true
       reject_reason: "Review score below threshold"
 
-  - name: strat_skip_if_refined
-    description: "Skip refine if already done"
-    salience: 100
-    when: "strat_already_refined"
-    action: skip
-
-  - name: strat_skip_if_reviewed
-    description: "Skip review if already done"
-    salience: 100
-    when: "strat_already_reviewed"
-    action: skip
-
   - name: strat_skip_if_security_reviewed
     description: "Skip security review if already done"
     salience: 100
@@ -276,14 +264,9 @@ workflows:
             - --model
             - "{{ model }}"
 
-      - name: refine_gate
-        type: gate
-        rules:
-          - strat_skip_if_refined
-
       - name: strategy_refine
         type: agent_job
-        when: "not rfe_rejected"
+        when: "not rfe_rejected and not strat_already_refined"
         params:
           command: ["/bin/bash"]
           args:
@@ -295,14 +278,9 @@ workflows:
             - --model
             - "{{ model }}"
 
-      - name: review_gate
-        type: gate
-        rules:
-          - strat_skip_if_reviewed
-
       - name: strategy_review
         type: agent_job
-        when: "not rfe_rejected"
+        when: "not rfe_rejected and not strat_already_reviewed"
         params:
           command: ["/bin/bash"]
           args:
