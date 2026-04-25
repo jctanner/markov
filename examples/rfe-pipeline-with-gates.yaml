@@ -375,8 +375,10 @@ workflows:
             path: "/app/artifacts/epic-receipts/{{ strat_key }}.md"
             format: markdown
             source: local
+            optional: true
 
       - name: per_epic_work
+        when: "load_epic_receipt.artifacts.receipt != None"
         for_each: "load_epic_receipt.artifacts.receipt.frontmatter.epics"
         for_each_key: "key"
         for_each_sort: "key"
