@@ -186,7 +186,7 @@ workflows:
         type: set_fact
         vars:
           review_passed: "load_rfe_results.artifacts.review.frontmatter.pass == true and load_rfe_results.artifacts.review.frontmatter.recommendation != 'reject'"
-          review_score: "{{ load_rfe_results.artifacts.review.frontmatter.scores.total }}"
+          review_score: "{{ load_rfe_results.artifacts.review.frontmatter.score }}"
           already_submitted: "load_rfe_results.artifacts.task.frontmatter.status == 'Submitted'"
           strat_exists: "check_strat_exists.artifacts.tickets != None and (issue in check_strat_exists.artifacts.tickets.rfe_source)"
           strat_key:
