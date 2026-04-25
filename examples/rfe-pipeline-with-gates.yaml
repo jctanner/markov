@@ -80,7 +80,7 @@ workflows:
           review:
             path: "/app/artifacts/rfe-reviews/{{ issue }}-review.md"
             format: markdown
-            source: k8s
+            source: local
             optional: true
 
       - name: rfe_speedrun
@@ -103,11 +103,11 @@ workflows:
           task:
             path: "/app/artifacts/rfe-tasks/{{ issue }}.md"
             format: markdown
-            source: k8s
+            source: local
           review:
             path: "/app/artifacts/rfe-reviews/{{ issue }}-review.md"
             format: markdown
-            source: k8s
+            source: local
 
       - name: check_strat_exists
         type: load_artifact
@@ -115,7 +115,7 @@ workflows:
           tickets:
             path: "/app/artifacts/strat-tickets.md"
             format: markdown_table
-            source: k8s
+            source: local
             optional: true
 
       # ── Compute facts for gate evaluation ───────────────────
@@ -140,12 +140,12 @@ workflows:
           strat_task:
             path: "/app/artifacts/strat-tasks/{{ strat_key }}.md"
             format: markdown
-            source: k8s
+            source: local
             optional: true
           strat_review:
             path: "/app/artifacts/strat-reviews/{{ strat_key }}-review.md"
             format: markdown
-            source: k8s
+            source: local
             optional: true
 
       - name: eval_strat_status
