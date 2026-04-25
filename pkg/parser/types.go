@@ -43,6 +43,8 @@ type Step struct {
 	Register    string              `yaml:"register"`
 	Timeout     int                 `yaml:"timeout"`
 	ForEach     string              `yaml:"for_each"`
+	ForEachKey  string              `yaml:"for_each_key"`
+	ForEachSort string              `yaml:"for_each_sort"`
 	As          string              `yaml:"as"`
 	Concurrency int                 `yaml:"concurrency"`
 	Workflow    string              `yaml:"workflow"`

@@ -1,0 +1,64 @@
+---
+# Demonstrates for_each_key and for_each_sort
+#
+# Iterates over a list of items with domain-meaningful keys (ticket IDs)
+# instead of array indices. Items are sorted by key before dispatch,
+# making iteration order deterministic regardless of input ordering.
+#
+# Run: markov run examples/for-each-keys.yaml --verbose
+
+entrypoint: main
+
+vars:
+  tickets:
+    - key: PROJ-300
+      title: "Add caching layer"
+      priority: low
+    - key: PROJ-100
+      title: "Fix auth bug"
+      priority: critical
+    - key: PROJ-200
+      title: "Update docs"
+      priority: medium
+
+workflows:
+  - name: main
+    steps:
+      - name: announce
+        type: shell_exec
+        params:
+          command: "echo 'Processing {{ tickets | length }} tickets in sorted order'"
+
+      - name: process_tickets
+        for_each: tickets
+        for_each_key: "key"
+        for_each_sort: "key"
+        as: ticket
+        concurrency: 1
+        workflow: handle_ticket
+        vars:
+          ticket_key: "{{ ticket.key }}"
+          ticket_title: "{{ ticket.title }}"
+          ticket_priority: "{{ ticket.priority }}"
+
+      - name: done
+        type: shell_exec
+        params:
+          command: "echo 'All tickets processed'"
+
+  - name: handle_ticket
+    steps:
+      - name: log_start
+        type: shell_exec
+        params:
+          command: "echo 'Processing {{ ticket_key }}: {{ ticket_title }} ({{ ticket_priority }})'"
+
+      - name: classify
+        type: set_fact
+        vars:
+          is_critical: "{{ ticket_priority }}"
+
+      - name: log_done
+        type: shell_exec
+        params:
+          command: "echo 'Done with {{ ticket_key }}'"

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -797,6 +798,34 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 		return fmt.Errorf("resolving for_each: %w", err)
 	}
 
+	if step.ForEachSort != "" {
+		for i, item := range listVal {
+			if extractItemField(item, step.ForEachSort) == nil {
+				return fmt.Errorf("for_each_sort %q not found on item at index %d", step.ForEachSort, i)
+			}
+		}
+		sort.SliceStable(listVal, func(i, j int) bool {
+			ki := fmt.Sprintf("%v", extractItemField(listVal[i], step.ForEachSort))
+			kj := fmt.Sprintf("%v", extractItemField(listVal[j], step.ForEachSort))
+			return ki < kj
+		})
+	}
+
+	if step.ForEachKey != "" {
+		seen := make(map[string]int)
+		for i, item := range listVal {
+			val := extractItemField(item, step.ForEachKey)
+			if val == nil {
+				return fmt.Errorf("for_each_key %q not found on item at index %d", step.ForEachKey, i)
+			}
+			key := fmt.Sprintf("%v", val)
+			if prev, ok := seen[key]; ok {
+				return fmt.Errorf("duplicate for_each_key %q at indices %d and %d", key, prev, i)
+			}
+			seen[key] = i
+		}
+	}
+
 	concurrency := step.Concurrency
 	if concurrency <= 0 {
 		concurrency = e.forks
@@ -859,7 +888,12 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 					}
 				}
 
-				subRunID := fmt.Sprintf("%s-%s-%d", runID, step.Name, idx)
+				forEachKey := fmt.Sprintf("%d", idx)
+				if step.ForEachKey != "" {
+					forEachKey = fmt.Sprintf("%v", extractItemField(itemVal, step.ForEachKey))
+				}
+
+				subRunID := fmt.Sprintf("%s-%s-%s", runID, step.Name, forEachKey)
 				varsJSON, _ := json.Marshal(subVars)
 				subRun := &state.Run{
 					RunID:       subRunID,
@@ -868,12 +902,10 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 					VarsJSON:    string(varsJSON),
 					ParentRunID: runID,
 					ParentStep:  step.Name,
-					ForEachKey:  fmt.Sprintf("%d", idx),
+					ForEachKey:  forEachKey,
 					StartedAt:   time.Now(),
 				}
 				e.store.CreateRun(ctx, subRun)
-
-				forEachKey := fmt.Sprintf("%d", idx)
 				e.fireEvent(func(cb callback.Callback) error {
 					return cb.OnSubRunStarted(callback.SubRunStartedEvent{
 						EventHeader:  callback.EventHeader{Timestamp: subRun.StartedAt, RunID: subRunID, EventType: "sub_run_started"},
@@ -993,6 +1025,18 @@ func resolveContextPath(path string, ctx map[string]any) any {
 		}
 	}
 	return current
+}
+
+func extractItemField(item any, field string) any {
+	m, ok := item.(map[string]any)
+	if !ok {
+		return nil
+	}
+	v, ok := m[field]
+	if !ok {
+		return nil
+	}
+	return v
 }
 
 func (e *Engine) injectJobMeta(params map[string]any, runID, workflowName, stepName string) {
