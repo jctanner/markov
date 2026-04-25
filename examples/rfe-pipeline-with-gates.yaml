@@ -325,3 +325,74 @@ workflows:
             - "{{ strat_key }}"
             - --model
             - "{{ model }}"
+
+      - name: load_security_review_result
+        type: load_artifact
+        when: "not rfe_rejected and strat_review_passed"
+        artifacts:
+          security_review_final:
+            path: "/app/artifacts/security-reviews/{{ strat_key }}-security-review.md"
+            format: markdown
+            source: local
+
+      - name: eval_security_result
+        type: set_fact
+        when: "not rfe_rejected and strat_review_passed"
+        vars:
+          security_review_passed: "load_security_review_result.artifacts.security_review_final.frontmatter.verdict == 'PASS'"
+
+      - name: check_epics_exist
+        type: load_artifact
+        when: "not rfe_rejected and strat_review_passed and security_review_passed"
+        artifacts:
+          epic_receipt:
+            path: "/app/artifacts/epic-receipts/{{ strat_key }}.md"
+            format: markdown
+            source: local
+            optional: true
+
+      - name: epic_create
+        type: agent_job
+        when: "not rfe_rejected and strat_review_passed and security_review_passed and check_epics_exist.artifacts.epic_receipt == None"
+        params:
+          command: ["/bin/bash"]
+          args:
+            - /app/scripts/run_skill.sh
+            - --skill
+            - epic-create
+            - --issue
+            - "{{ strat_key }}"
+            - --model
+            - "{{ model }}"
+
+      # ── Fan-out: per-epic workflows ─────────────────────────
+
+      - name: load_epic_receipt
+        type: load_artifact
+        when: "not rfe_rejected and strat_review_passed and security_review_passed"
+        artifacts:
+          receipt:
+            path: "/app/artifacts/epic-receipts/{{ strat_key }}.md"
+            format: markdown
+            source: local
+
+      - name: per_epic_work
+        for_each: "load_epic_receipt.artifacts.receipt.frontmatter.epics"
+        for_each_key: "key"
+        for_each_sort: "key"
+        as: epic
+        concurrency: 3
+        workflow: epic-breakdown
+        vars:
+          epic_key: "{{ epic.key }}"
+          epic_type: "{{ epic.type }}"
+          epic_title: "{{ epic.title }}"
+          strat_key: "{{ strat_key }}"
+          model: "{{ model }}"
+
+  - name: epic-breakdown
+    steps:
+      - name: start
+        type: shell_exec
+        params:
+          command: "echo 'Epic breakdown workflow started for {{ epic_key }} ({{ epic_type }}): {{ epic_title }}'"
