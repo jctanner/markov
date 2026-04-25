@@ -71,6 +71,17 @@ type StepSkippedEvent struct {
 	Reason       string `json:"reason"`
 }
 
+type JobCreatedEvent struct {
+	EventHeader
+	WorkflowName string `json:"workflow_name"`
+	StepName     string `json:"step_name"`
+	StepType     string `json:"step_type"`
+	ForkID       string `json:"fork_id,omitempty"`
+	JobName      string `json:"job_name"`
+	Namespace    string `json:"namespace"`
+	PodSelector  string `json:"pod_selector"`
+}
+
 type GateEvaluatedEvent struct {
 	EventHeader
 	WorkflowName string         `json:"workflow_name"`
@@ -118,6 +129,7 @@ type Callback interface {
 	OnStepFailed(event StepFailedEvent) error
 	OnStepSkipped(event StepSkippedEvent) error
 
+	OnJobCreated(event JobCreatedEvent) error
 	OnGateEvaluated(event GateEvaluatedEvent) error
 
 	OnSubRunStarted(event SubRunStartedEvent) error

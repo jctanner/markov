@@ -41,6 +41,7 @@ func (j *JSONLCallback) OnStepStarted(event StepStartedEvent) error        { ret
 func (j *JSONLCallback) OnStepCompleted(event StepCompletedEvent) error    { return j.write(event) }
 func (j *JSONLCallback) OnStepFailed(event StepFailedEvent) error          { return j.write(event) }
 func (j *JSONLCallback) OnStepSkipped(event StepSkippedEvent) error        { return j.write(event) }
+func (j *JSONLCallback) OnJobCreated(event JobCreatedEvent) error          { return j.write(event) }
 func (j *JSONLCallback) OnGateEvaluated(event GateEvaluatedEvent) error    { return j.write(event) }
 func (j *JSONLCallback) OnSubRunStarted(event SubRunStartedEvent) error    { return j.write(event) }
 func (j *JSONLCallback) OnSubRunCompleted(event SubRunCompletedEvent) error { return j.write(event) }

@@ -13,13 +13,23 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
+type K8sJobInfo struct {
+	JobName   string
+	Namespace string
+}
+
 type K8sJob struct {
-	client    kubernetes.Interface
-	namespace string
+	client       kubernetes.Interface
+	namespace    string
+	onJobCreated func(K8sJobInfo)
 }
 
 func NewK8sJob(client kubernetes.Interface, namespace string) *K8sJob {
 	return &K8sJob{client: client, namespace: namespace}
+}
+
+func (e *K8sJob) SetOnJobCreated(fn func(K8sJobInfo)) {
+	e.onJobCreated = fn
 }
 
 func (e *K8sJob) Execute(ctx context.Context, params map[string]any) (*Result, error) {
@@ -39,6 +49,9 @@ func (e *K8sJob) Execute(ctx context.Context, params map[string]any) (*Result, e
 	}
 
 	jobName := created.Name
+	if e.onJobCreated != nil {
+		e.onJobCreated(K8sJobInfo{JobName: jobName, Namespace: ns})
+	}
 	err = e.waitForCompletion(ctx, ns, jobName)
 
 	logs := e.getPodLogs(ctx, ns, jobName)

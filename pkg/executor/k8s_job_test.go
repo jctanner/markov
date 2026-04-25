@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -71,6 +72,56 @@ func TestGetPodLogs_LabelSelector(t *testing.T) {
 	if got != "" {
 		t.Errorf("getPodLogs() = %q, want empty string (no matching labels)", got)
 	}
+}
+
+func TestSetOnJobCreated_Called(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	e := NewK8sJob(client, "test-ns")
+
+	var got *K8sJobInfo
+	e.SetOnJobCreated(func(info K8sJobInfo) {
+		got = &info
+	})
+
+	params := map[string]any{
+		"_job_name": "test-job",
+		"image":     "busybox:latest",
+		"command":   []any{"/bin/sh", "-c", "echo hello"},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// Execute will fail at waitForCompletion (fake client doesn't update job status),
+	// but the callback should fire before that.
+	e.Execute(ctx, params)
+
+	if got == nil {
+		t.Fatal("onJobCreated was not called")
+	}
+	if got.Namespace != "test-ns" {
+		t.Errorf("Namespace = %q, want test-ns", got.Namespace)
+	}
+	if got.JobName == "" {
+		t.Error("JobName is empty")
+	}
+}
+
+func TestSetOnJobCreated_NilSafe(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	e := NewK8sJob(client, "test-ns")
+
+	params := map[string]any{
+		"_job_name": "test-job",
+		"image":     "busybox:latest",
+		"command":   []any{"/bin/sh", "-c", "echo hello"},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// Should not panic when no callback is set
+	e.Execute(ctx, params)
 }
 
 func TestExecuteOutput_IncludesLogs_WhenAvailable(t *testing.T) {

@@ -90,6 +90,72 @@ func TestStepCompletedEventOmitsEmptyOutput(t *testing.T) {
 	}
 }
 
+func TestJobCreatedEventJSON(t *testing.T) {
+	event := JobCreatedEvent{
+		EventHeader: EventHeader{
+			Timestamp: time.Now(),
+			RunID:     "run1",
+			EventType: "job_created",
+		},
+		WorkflowName: "deploy",
+		StepName:     "run_tests",
+		StepType:     "k8s_job",
+		JobName:      "markov-job-run_tests-7f3a",
+		Namespace:    "ai-pipeline",
+		PodSelector:  "job-name=markov-job-run_tests-7f3a",
+	}
+
+	data, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var got map[string]any
+	json.Unmarshal(data, &got)
+
+	if got["job_name"] != "markov-job-run_tests-7f3a" {
+		t.Errorf("job_name = %v, want markov-job-run_tests-7f3a", got["job_name"])
+	}
+	if got["pod_selector"] != "job-name=markov-job-run_tests-7f3a" {
+		t.Errorf("pod_selector = %v, want job-name=markov-job-run_tests-7f3a", got["pod_selector"])
+	}
+	if got["namespace"] != "ai-pipeline" {
+		t.Errorf("namespace = %v, want ai-pipeline", got["namespace"])
+	}
+	if _, ok := got["fork_id"]; ok {
+		t.Error("expected fork_id to be omitted when empty")
+	}
+}
+
+func TestJobCreatedEventWithForkID(t *testing.T) {
+	event := JobCreatedEvent{
+		EventHeader: EventHeader{
+			Timestamp: time.Now(),
+			RunID:     "run1",
+			EventType: "job_created",
+		},
+		WorkflowName: "deploy",
+		StepName:     "run_tests",
+		StepType:     "k8s_job",
+		ForkID:       "3",
+		JobName:      "markov-job-run_tests-7f3a",
+		Namespace:    "ai-pipeline",
+		PodSelector:  "job-name=markov-job-run_tests-7f3a",
+	}
+
+	data, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var got map[string]any
+	json.Unmarshal(data, &got)
+
+	if got["fork_id"] != "3" {
+		t.Errorf("fork_id = %v, want 3", got["fork_id"])
+	}
+}
+
 func TestSubRunEventForEachKey(t *testing.T) {
 	event := SubRunStartedEvent{
 		EventHeader: EventHeader{

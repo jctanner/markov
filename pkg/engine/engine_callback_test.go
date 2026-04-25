@@ -11,6 +11,7 @@ import (
 	"github.com/jctanner/markov/pkg/executor"
 	"github.com/jctanner/markov/pkg/parser"
 	"github.com/jctanner/markov/pkg/state"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 type mockCallback struct {
@@ -43,6 +44,7 @@ func (m *mockCallback) OnStepStarted(e callback.StepStartedEvent) error   { retu
 func (m *mockCallback) OnStepCompleted(e callback.StepCompletedEvent) error { return m.record("step_completed", e) }
 func (m *mockCallback) OnStepFailed(e callback.StepFailedEvent) error     { return m.record("step_failed", e) }
 func (m *mockCallback) OnStepSkipped(e callback.StepSkippedEvent) error   { return m.record("step_skipped", e) }
+func (m *mockCallback) OnJobCreated(e callback.JobCreatedEvent) error   { return m.record("job_created", e) }
 func (m *mockCallback) OnGateEvaluated(e callback.GateEvaluatedEvent) error { return m.record("gate_evaluated", e) }
 func (m *mockCallback) OnSubRunStarted(e callback.SubRunStartedEvent) error { return m.record("sub_run_started", e) }
 func (m *mockCallback) OnSubRunCompleted(e callback.SubRunCompletedEvent) error { return m.record("sub_run_completed", e) }
@@ -418,6 +420,7 @@ func (e *errorCallback) OnStepStarted(callback.StepStartedEvent) error      { re
 func (e *errorCallback) OnStepCompleted(callback.StepCompletedEvent) error  { return fmt.Errorf("cb error") }
 func (e *errorCallback) OnStepFailed(callback.StepFailedEvent) error        { return fmt.Errorf("cb error") }
 func (e *errorCallback) OnStepSkipped(callback.StepSkippedEvent) error      { return fmt.Errorf("cb error") }
+func (e *errorCallback) OnJobCreated(callback.JobCreatedEvent) error        { return fmt.Errorf("cb error") }
 func (e *errorCallback) OnGateEvaluated(callback.GateEvaluatedEvent) error  { return fmt.Errorf("cb error") }
 func (e *errorCallback) OnSubRunStarted(callback.SubRunStartedEvent) error  { return fmt.Errorf("cb error") }
 func (e *errorCallback) OnSubRunCompleted(callback.SubRunCompletedEvent) error { return fmt.Errorf("cb error") }
@@ -681,5 +684,95 @@ func TestCallbackDeployPipelineStructure(t *testing.T) {
 	expectedTotal := 1 + 19 + 19 + 6 + 6 + 1
 	if len(events) != expectedTotal {
 		t.Errorf("total events = %d, want %d: %v", len(events), expectedTotal, events)
+	}
+}
+
+func TestCallbackJobCreated(t *testing.T) {
+	wfFile := &parser.WorkflowFile{
+		Entrypoint: "main",
+		Workflows: []parser.Workflow{
+			{
+				Name: "main",
+				Steps: []parser.Step{
+					{
+						Name:    "run_job",
+						Type:    "k8s_job",
+						Timeout: 2,
+						Params: map[string]any{
+							"_job_name": "test-job",
+							"image":     "busybox:latest",
+							"command":   []any{"/bin/sh", "-c", "echo hello"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	k8sClient := fake.NewSimpleClientset()
+	k8sExec := executor.NewK8sJob(k8sClient, "test-ns")
+
+	eng, cb := newTestEngine(t, wfFile, map[string]executor.Executor{
+		"k8s_job": k8sExec,
+	})
+
+	ctx := context.Background()
+	// The step will fail because fake client doesn't update Job status,
+	// but job_created should fire before waitForCompletion.
+	eng.Run(ctx, "main", nil)
+
+	events := cb.getEvents()
+
+	hasJobCreated := false
+	for _, ev := range events {
+		if ev == "job_created" {
+			hasJobCreated = true
+			break
+		}
+	}
+	if !hasJobCreated {
+		t.Errorf("job_created not found in events: %v", events)
+	}
+
+	// job_created must appear after step_started
+	stepStartedIdx := -1
+	jobCreatedIdx := -1
+	for i, ev := range events {
+		if ev == "step_started" && stepStartedIdx == -1 {
+			stepStartedIdx = i
+		}
+		if ev == "job_created" && jobCreatedIdx == -1 {
+			jobCreatedIdx = i
+		}
+	}
+	if stepStartedIdx >= 0 && jobCreatedIdx >= 0 && jobCreatedIdx <= stepStartedIdx {
+		t.Errorf("job_created (idx %d) should come after step_started (idx %d)", jobCreatedIdx, stepStartedIdx)
+	}
+
+	// Verify the event fields
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	for _, ev := range cb.all {
+		if jc, ok := ev.(callback.JobCreatedEvent); ok {
+			if jc.StepName != "run_job" {
+				t.Errorf("StepName = %q, want run_job", jc.StepName)
+			}
+			if jc.StepType != "k8s_job" {
+				t.Errorf("StepType = %q, want k8s_job", jc.StepType)
+			}
+			if jc.Namespace != "test-ns" {
+				t.Errorf("Namespace = %q, want test-ns", jc.Namespace)
+			}
+			if jc.JobName == "" {
+				t.Error("JobName is empty")
+			}
+			if jc.PodSelector == "" {
+				t.Error("PodSelector is empty")
+			}
+			if jc.EventType != "job_created" {
+				t.Errorf("EventType = %q, want job_created", jc.EventType)
+			}
+			break
+		}
 	}
 }

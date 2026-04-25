@@ -619,6 +619,25 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 	}
 	defer cancel()
 
+	if k8sExec, ok := exec.(*executor.K8sJob); ok {
+		stepName := step.Name
+		stepType := step.Type
+		k8sExec.SetOnJobCreated(func(info executor.K8sJobInfo) {
+			e.fireEvent(func(cb callback.Callback) error {
+				return cb.OnJobCreated(callback.JobCreatedEvent{
+					EventHeader:  callback.EventHeader{Timestamp: time.Now(), RunID: runID, EventType: "job_created"},
+					WorkflowName: workflowName,
+					StepName:     stepName,
+					StepType:     stepType,
+					JobName:      info.JobName,
+					Namespace:    info.Namespace,
+					PodSelector:  fmt.Sprintf("job-name=%s", info.JobName),
+				})
+			})
+		})
+		defer k8sExec.SetOnJobCreated(nil)
+	}
+
 	result, err := exec.Execute(execCtx, renderedParams)
 	if err != nil {
 		return e.failStep(ctx, runID, workflowName, step.Name, base, now, err)
