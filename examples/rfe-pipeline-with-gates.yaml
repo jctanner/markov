@@ -322,6 +322,6 @@ workflows:
             - --skill
             - strat-security-review
             - --issue
-            - "{{ issue }}"
+            - "{{ strat_key }}"
             - --model
             - "{{ model }}"
