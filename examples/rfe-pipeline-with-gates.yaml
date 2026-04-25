@@ -314,7 +314,7 @@ workflows:
 
       - name: strat_security_review
         type: agent_job
-        when: "not rfe_rejected and strat_review_passed"
+        when: "not rfe_rejected and strat_review_passed and not strat_already_security_reviewed"
         params:
           command: ["/bin/bash"]
           args:
