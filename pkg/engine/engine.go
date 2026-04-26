@@ -2,9 +2,12 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -1039,14 +1042,42 @@ func extractItemField(item any, field string) any {
 	return v
 }
 
+var k8sNameUnsafe = regexp.MustCompile(`[^a-z0-9\-.]`)
+
+func sanitizeK8sName(s string, maxLen int) string {
+	s = strings.ToLower(s)
+	s = strings.NewReplacer("_", "-", " ", "-").Replace(s)
+	s = k8sNameUnsafe.ReplaceAllString(s, "-")
+	for strings.Contains(s, "--") {
+		s = strings.ReplaceAll(s, "--", "-")
+	}
+	s = strings.Trim(s, "-.")
+	if len(s) > maxLen {
+		hash := sha256.Sum256([]byte(s))
+		suffix := hex.EncodeToString(hash[:4])
+		s = s[:maxLen-len(suffix)-1] + "-" + suffix
+		s = strings.TrimRight(s, "-.")
+	}
+	return s
+}
+
+func sanitizeK8sLabel(s string, maxLen int) string {
+	s = strings.NewReplacer("_", "-", " ", "-").Replace(s)
+	if len(s) > maxLen {
+		s = s[:maxLen]
+	}
+	s = strings.Trim(s, "-._")
+	return s
+}
+
 func (e *Engine) injectJobMeta(params map[string]any, runID, workflowName, stepName string) {
 	if _, ok := params["_job_name"]; !ok {
 		prefix := "markov"
 		if p, ok := params["name_prefix"].(string); ok && p != "" {
 			prefix = p
 		}
-		sanitized := strings.NewReplacer("_", "-", " ", "-").Replace(strings.ToLower(stepName))
-		params["_job_name"] = fmt.Sprintf("%s-%s-%s", prefix, runID, sanitized)
+		raw := fmt.Sprintf("%s-%s-%s", prefix, runID, stepName)
+		params["_job_name"] = sanitizeK8sName(raw, 63)
 	}
 
 	labels, _ := params["_labels"].(map[string]string)
@@ -1054,9 +1085,9 @@ func (e *Engine) injectJobMeta(params map[string]any, runID, workflowName, stepN
 		labels = make(map[string]string)
 	}
 	labels["app"] = "markov"
-	labels["markov/run-id"] = runID
-	labels["markov/workflow"] = workflowName
-	labels["markov/step"] = stepName
+	labels["markov/run-id"] = sanitizeK8sLabel(runID, 63)
+	labels["markov/workflow"] = sanitizeK8sLabel(workflowName, 63)
+	labels["markov/step"] = sanitizeK8sLabel(stepName, 63)
 	params["_labels"] = labels
 }
 

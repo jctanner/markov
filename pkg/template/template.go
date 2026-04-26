@@ -1,11 +1,28 @@
 package template
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/flosch/pongo2/v6"
 )
+
+func init() {
+	pongo2.RegisterFilter("fromjson", filterFromJSON)
+}
+
+func filterFromJSON(in *pongo2.Value, param *pongo2.Value) (*pongo2.Value, *pongo2.Error) {
+	raw := in.String()
+	var parsed any
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return nil, &pongo2.Error{
+			Sender:    "filter:fromjson",
+			OrigError: err,
+		}
+	}
+	return pongo2.AsValue(parsed), nil
+}
 
 type Engine struct{}
 

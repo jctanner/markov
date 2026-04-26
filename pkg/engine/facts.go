@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -25,6 +26,18 @@ func (e *Engine) evalFact(v any, runCtx map[string]any) (any, error) {
 	switch val := v.(type) {
 	case string:
 		if strings.Contains(val, "{{") || strings.Contains(val, "{%") {
+			if path, ok := extractFromJSONExpr(val); ok {
+				raw := resolveContextPath(path, runCtx)
+				if raw != nil {
+					if s, ok := raw.(string); ok {
+						var parsed any
+						if err := json.Unmarshal([]byte(strings.TrimSpace(s)), &parsed); err != nil {
+							return nil, fmt.Errorf("fromjson: %w", err)
+						}
+						return parsed, nil
+					}
+				}
+			}
 			rendered, err := e.tmpl.Render(val, runCtx)
 			if err != nil {
 				return nil, fmt.Errorf("rendering template: %w", err)
@@ -114,6 +127,22 @@ func (e *Engine) lookupFact(fromPath string, spec map[string]any, runCtx map[str
 	return nil, nil
 }
 
+func extractFromJSONExpr(tmpl string) (string, bool) {
+	s := strings.TrimSpace(tmpl)
+	if !strings.HasPrefix(s, "{{") || !strings.HasSuffix(s, "}}") {
+		return "", false
+	}
+	inner := strings.TrimSpace(s[2 : len(s)-2])
+	if !strings.HasSuffix(inner, "| fromjson") {
+		return "", false
+	}
+	path := strings.TrimSpace(inner[:len(inner)-len("| fromjson")])
+	if path == "" {
+		return "", false
+	}
+	return path, true
+}
+
 func coerceString(s string) any {
 	s = strings.TrimSpace(s)
 	if s == "True" || s == "true" {
@@ -130,6 +159,12 @@ func coerceString(s string) any {
 	}
 	if f, err := strconv.ParseFloat(s, 64); err == nil {
 		return f
+	}
+	if len(s) > 0 && (s[0] == '[' || s[0] == '{') {
+		var parsed any
+		if err := json.Unmarshal([]byte(s), &parsed); err == nil {
+			return parsed
+		}
 	}
 	return s
 }
