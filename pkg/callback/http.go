@@ -79,7 +79,6 @@ func (h *HTTPCallback) sendWithRetry(data []byte) {
 		resp.Body.Close()
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			log.Printf("callback http: sent (%d)", resp.StatusCode)
 			return
 		}
 		if resp.StatusCode >= 500 {
