@@ -26,7 +26,7 @@ A [Markov chain](https://en.wikipedia.org/wiki/Markov_chain) is a system that tr
 
 ## Documentation
 
-Full documentation is available at [docs/index.md](docs/index.md), including:
+Full documentation is available at [docs/](docs/), including:
 
 - [Getting Started](docs/getting-started.md) — install and run your first workflow
 - [Language Reference](docs/reference/workflow-file.md) — complete YAML DSL schema
