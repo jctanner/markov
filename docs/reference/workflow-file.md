@@ -1,0 +1,441 @@
+# Workflow File Reference
+
+This is the canonical reference for the Markov workflow file format. A workflow file is a YAML document that defines one or more workflows, their steps, variables, rules, and custom step types.
+
+## Top-Level Fields
+
+| Field | YAML Key | Type | Required | Default | Description |
+|-------|----------|------|----------|---------|-------------|
+| Entrypoint | `entrypoint` | string | yes | -- | Name of the workflow to execute first. Must match a workflow defined in `workflows`. |
+| Namespace | `namespace` | string | no | `"default"` | Kubernetes namespace used for `k8s_job` steps. Can be overridden by CLI flag or in-cluster ServiceAccount namespace. |
+| Forks | `forks` | int | no | `5` | Default maximum concurrency for `for_each` fan-outs. Set to 0 or omit to use the default. |
+| Vars | `vars` | map[string]any | no | `{}` | Global variables available to all workflows. Overridden by workflow-level vars, step-level vars, and CLI `--var` flags. |
+| Rules | `rules` | Rule[] | no | `[]` | Named rule definitions used by `gate` steps. Rules can also be loaded from external files. |
+| StepTypes | `step_types` | map[string]StepType | no | `{}` | User-defined step type definitions that wrap a primitive type with default parameters. |
+| Workflows | `workflows` | Workflow[] | yes | -- | List of workflow definitions. At least one must be defined, and the entrypoint must reference one by name. |
+
+---
+
+## Workflow
+
+A workflow is a named sequence of steps. Workflows can invoke other workflows as sub-workflows.
+
+| Field | YAML Key | Type | Required | Default | Description |
+|-------|----------|------|----------|---------|-------------|
+| Name | `name` | string | yes | -- | Unique workflow name. Referenced by `entrypoint` and by steps that invoke sub-workflows. |
+| Description | `description` | string | no | `""` | Human-readable description of what this workflow does. |
+| Vars | `vars` | map[string]any | no | `{}` | Workflow-scoped variables. Non-nil values override global vars. Use `null` values to declare required variables that must be passed by the caller. |
+| Steps | `steps` | Step[] | yes | -- | Ordered list of steps to execute. |
+
+```yaml
+workflows:
+  - name: deploy
+    description: "Deploy the application to staging"
+    vars:
+      environment: staging
+      dry_run: false
+    steps:
+      - name: build
+        type: shell_exec
+        params:
+          command: make
+          args: ["build"]
+```
+
+---
+
+## Step
+
+A step is the unit of execution within a workflow. Each step either runs a primitive type (or custom step type) or invokes a sub-workflow.
+
+| Field | YAML Key | Type | Required | Description |
+|-------|----------|------|----------|-------------|
+| Name | `name` | string | yes | Unique name within its workflow. Used for logging, state tracking, and variable scoping. |
+| Type | `type` | string | conditional | Step type name. Must be a known primitive or a defined `step_type`. Required unless `workflow` is set. |
+| Workflow | `workflow` | string | conditional | Name of a sub-workflow to invoke. Required unless `type` is set. Cannot be combined with `type`. |
+| When | `when` | string | no | Pongo2 boolean expression. If it evaluates to false, the step is skipped. Has access to all in-scope variables. |
+| Register | `register` | string | no | Variable name to store the step's output. The result is available to subsequent steps. |
+| Timeout | `timeout` | int | no | Step timeout in seconds. Behavior depends on the step type (e.g., k8s_job watch timeout). |
+| Params | `params` | map[string]any | no | Step-type-specific parameters. Values can contain Pongo2 template expressions. |
+| Vars | `vars` | map[string]any | no | Variables to pass to a sub-workflow invocation. Only meaningful when `workflow` is set. |
+| Artifacts | `artifacts` | map[string]Artifact | no | Artifact definitions to load after the step completes. Each key becomes a variable name. |
+| ForEach | `for_each` | string | no | Expression that resolves to a list. The step is executed once per item in the list (fan-out). |
+| ForEachKey | `for_each_key` | string | no | Field name on each item to use as a stable iteration key. Ensures deterministic ordering and state tracking across runs. |
+| ForEachSort | `for_each_sort` | string | no | Field name to sort items by before iteration begins. Provides predictable execution order. |
+| As | `as` | string | conditional | Variable name for the current iteration item. Required when `for_each` is set. |
+| Concurrency | `concurrency` | int | no | Override the global `forks` value for this specific `for_each` step. |
+| That | `that` | string[] | no | List of assertion expressions. Used with `type: assert`. All must evaluate to true or the step fails. |
+| Msg | `msg` | string | no | Custom failure message for `assert` steps. Displayed when any assertion in `that` fails. |
+| Rules | `rules` | string[] | no | List of rule names to evaluate. Used with `type: gate`. Must reference rules defined in the top-level `rules` block. |
+| Facts | `facts` | map[string]any | no | Additional facts to inject into the rule evaluation context for `gate` steps. Use this to pass step results or computed values into rules. |
+
+```yaml
+steps:
+  # Simple step with a condition
+  - name: notify
+    type: shell_exec
+    when: "needs_review"
+    params:
+      command: echo
+      args: ["Flagged for review"]
+
+  # Fan-out with concurrency override
+  - name: process-all
+    for_each: "items"
+    for_each_key: "id"
+    for_each_sort: "priority"
+    as: item
+    concurrency: 3
+    workflow: process-item
+    vars:
+      value: "{{ item }}"
+
+  # Sub-workflow invocation
+  - name: finalize
+    workflow: cleanup
+    vars:
+      target: "{{ target }}"
+```
+
+---
+
+## Rule
+
+Rules are used by `gate` steps to make decisions based on the current variable context. Rules are evaluated by a forward-chaining rule engine (Grule). They fire in salience order; when a rule fires and sets facts, remaining rules are re-evaluated against the updated context.
+
+| Field | YAML Key | Type | Required | Default | Description |
+|-------|----------|------|----------|---------|-------------|
+| Name | `name` | string | yes | -- | Unique rule name. Referenced by gate steps via the `rules` field. |
+| File | `file` | string | no | -- | Path to an external YAML file containing rule definitions. The file must have a top-level `rules` key. When set, this entry is replaced by the rules loaded from the file. |
+| Description | `description` | string | no | `""` | Human-readable description of the rule's purpose. |
+| Salience | `salience` | int | no | `0` | Priority. Higher values fire first. Use to control evaluation order when multiple rules may match. |
+| When | `when` | string | no | -- | Condition expression (Pongo2 syntax). The rule fires when this evaluates to true. |
+| Action | `action` | string | no | `"continue"` | What happens when the rule fires. One of: `continue` (proceed to next step), `skip` (skip subsequent steps until the next gate), `pause` (halt and wait for external input). |
+| SetFact | `set_fact` | map[string]any | no | `{}` | Variables to set in the workflow context when the rule fires. These become available to all downstream steps and rules. |
+
+### Rule scoping
+
+Rules automatically see global vars, workflow vars, CLI `--var` overrides, and `set_fact` values. Rules do **not** see step results, register outputs, or artifact data directly. To pass step data into a rule evaluation, use the `facts` field on the gate step:
+
+```yaml
+rules:
+  - name: auto_approve
+    salience: 100
+    when: "score >= 8"
+    action: continue
+    set_fact:
+      approved: true
+
+workflows:
+  - name: main
+    steps:
+      - name: analyze
+        type: shell_exec
+        params:
+          command: echo
+          args: ["9"]
+        register: analysis
+
+      - name: approval_gate
+        type: gate
+        facts:
+          score: "{{ analysis.score }}"
+        rules:
+          - auto_approve
+```
+
+### External rule files
+
+Rules can be loaded from external YAML files. The file must contain a top-level `rules` key with an array of rule definitions:
+
+```yaml
+# rules/triage.yaml
+rules:
+  - name: critical_auto_approve
+    salience: 100
+    when: "severity == 'critical' and confidence > 0.95"
+    action: continue
+    set_fact:
+      auto_approved: true
+```
+
+Reference it in the workflow file:
+
+```yaml
+rules:
+  - file: rules/triage.yaml
+```
+
+---
+
+## StepType
+
+Step types let you create reusable abstractions over primitive types. A step type wraps a primitive with pre-configured parameters, reducing repetition across steps.
+
+| Field | YAML Key | Type | Required | Default | Description |
+|-------|----------|------|----------|---------|-------------|
+| Base | `base` | string | yes | -- | The primitive type this step type wraps. Must be one of the primitive types listed below. |
+| Description | `description` | string | no | `""` | Human-readable description. |
+| Defaults | `defaults` | map[string]any | no | `{}` | Default parameter values. Merged after `job` params and before `params`. |
+| Job | `job` | map[string]any | no | `{}` | Base parameters merged first (lowest priority). Typically used for image, command, and other job-level settings. |
+| Params | `params` | map[string]any | no | `{}` | Additional parameters merged after `defaults`. |
+
+Parameter merge order (later wins): `job` -> `defaults` -> `params` -> step-level `params`.
+
+```yaml
+step_types:
+  echo_job:
+    base: k8s_job
+    description: "Run a simple echo in a K8s Job"
+    job:
+      image: alpine:3.19
+      command: ["/bin/sh", "-c"]
+      ttl_seconds: 300
+      backoff_limit: 0
+
+  python_task:
+    base: k8s_job
+    description: "Run a Python script in a container"
+    job:
+      image: python:3.12-slim
+      command: ["python3", "-c"]
+    defaults:
+      ttl_seconds: 600
+      backoff_limit: 1
+```
+
+---
+
+## Artifact
+
+Artifacts define files to load after a step completes. The loaded content becomes available as a variable for use in subsequent steps.
+
+| Field | YAML Key | Type | Required | Default | Description |
+|-------|----------|------|----------|---------|-------------|
+| Path | `path` | string | no | -- | File path to load. Supports Pongo2 template expressions (e.g., `/app/artifacts/{{ issue }}/result.yaml`). |
+| Format | `format` | string | no | raw text | Parse format. One of: `yaml` (parsed to dict/list), `markdown` (frontmatter extracted), `markdown_table` (table parsed). Defaults to raw text if omitted. |
+| Source | `source` | string | no | auto-detect | Where to load the file from. One of: `local` (local filesystem), `k8s` (from a Kubernetes pod/volume). Auto-detected if omitted. |
+| Optional | `optional` | bool | no | `false` | If true, a missing file returns nil instead of causing an error. Useful for conditional artifact checks. |
+
+```yaml
+artifacts:
+  result:
+    path: "/app/artifacts/{{ issue }}/analysis/result.yaml"
+    format: yaml
+  blockers:
+    path: "/app/artifacts/{{ issue }}/blockers.yaml"
+    format: yaml
+    optional: true
+```
+
+---
+
+## Primitive Types
+
+These are the built-in step types available in every workflow file.
+
+| Type | Description |
+|------|-------------|
+| `k8s_job` | Run a container as a Kubernetes Job. Requires a configured K8s client. |
+| `http_request` | Make an HTTP request. |
+| `shell_exec` | Execute a shell command on the local machine. |
+| `gate` | Evaluate named rules against the current context. Controls flow based on rule outcomes. |
+| `load_artifact` | Load file artifacts into the variable context. |
+| `set_fact` | Set variables in the current workflow context. |
+| `assert` | Validate expressions. Fails the step if any assertion in `that` is false. |
+| `llm_invoke` | Reserved for LLM integration. Not yet implemented. |
+
+---
+
+## Validation Rules
+
+The parser enforces the following rules when loading a workflow file. Validation errors prevent execution.
+
+1. **`entrypoint` is required** and must match the `name` of a defined workflow.
+2. **At least one workflow** must be defined in the `workflows` list.
+3. **Workflow names must be unique** across all workflows in the file.
+4. **Step names must be unique** within their parent workflow.
+5. **Steps must have either `type` or `workflow`** set (not neither, not both without `type`).
+6. **`for_each` requires `as`** -- you must name the iteration variable.
+7. **`type` must be a known primitive or a defined `step_type`** in the file's `step_types` map.
+8. **Gate steps must reference at least one rule**, and every referenced rule must exist in the top-level `rules` block.
+9. **`forks` defaults to 5** if set to 0 or a negative value.
+10. **Sub-workflow references** must point to a workflow name that exists in the file.
+
+---
+
+## Template Expressions
+
+Values in `params`, `vars`, `when`, `that`, `msg`, artifact `path`, and other string fields support Pongo2 template syntax. Pongo2 is a Django/Jinja2-style template engine.
+
+Common patterns:
+
+```yaml
+# Variable interpolation
+args: ["echo '{{ greeting }}'"]
+
+# Filters
+when: "items | length > 0"
+
+# Arithmetic
+vars:
+  stage: "{{ stage + 1 }}"
+
+# Comparisons in conditions
+when: "severity == 'critical' and confidence > 0.95"
+
+# Negation
+when: "not deferred and not rejected"
+
+# None/null checks
+when: "confidence == None"
+```
+
+---
+
+## Complete Annotated Example
+
+This example demonstrates all top-level sections working together: global vars, custom step types, rules with a gate, fan-out with sub-workflows, conditionals, assertions, and artifacts.
+
+```yaml
+---
+# entrypoint (required): the workflow to run first
+entrypoint: main
+
+# namespace: K8s namespace for k8s_job steps
+namespace: markov-demo
+
+# forks: default max concurrency for for_each fan-outs
+forks: 3
+
+# vars: global variables accessible to all workflows
+vars:
+  environment: staging
+  targets: ["api", "web", "worker"]
+  max_retries: 3
+  confidence_threshold: 0.8
+
+# rules: named rule definitions for gate steps
+rules:
+  - name: high_confidence
+    description: "Proceed when confidence is high enough"
+    salience: 100
+    when: "confidence >= confidence_threshold"
+    action: continue
+    set_fact:
+      approved: true
+
+  - name: low_confidence
+    description: "Skip deployment when confidence is too low"
+    salience: 50
+    when: "confidence < confidence_threshold"
+    action: skip
+    set_fact:
+      approved: false
+      skip_reason: "Confidence below threshold"
+
+# step_types: reusable step definitions wrapping primitives
+step_types:
+  run_script:
+    base: k8s_job
+    description: "Run a shell script in an Alpine container"
+    job:
+      image: alpine:3.19
+      command: ["/bin/sh", "-c"]
+      ttl_seconds: 300
+      backoff_limit: 0
+
+  python_task:
+    base: k8s_job
+    description: "Run a Python script"
+    job:
+      image: python:3.12-slim
+      command: ["python3", "-c"]
+    defaults:
+      ttl_seconds: 600
+
+# workflows: the workflow definitions
+workflows:
+  - name: main
+    description: "Top-level orchestration workflow"
+    steps:
+      # Step 1: Run analysis and register the result
+      - name: analyze
+        type: shell_exec
+        params:
+          command: echo
+          args: ["Running analysis for {{ environment }}"]
+        register: analysis_result
+
+      # Step 2: Load an artifact produced by analysis
+      - name: load-results
+        type: load_artifact
+        artifacts:
+          report:
+            path: "/tmp/analysis/{{ environment }}/report.yaml"
+            format: yaml
+            optional: true
+
+      # Step 3: Set a fact based on analysis
+      - name: set-confidence
+        type: set_fact
+        vars:
+          confidence: 0.92
+
+      # Step 4: Gate decision based on rules
+      - name: deploy-gate
+        type: gate
+        rules:
+          - high_confidence
+          - low_confidence
+
+      # Step 5: Assert preconditions before deployment
+      - name: check-approval
+        type: assert
+        that:
+          - "approved"
+          - "environment == 'staging' or environment == 'production'"
+        msg: "Deployment not approved or invalid environment"
+
+      # Step 6: Fan-out deployment across all targets
+      - name: deploy-all
+        for_each: "targets"
+        for_each_sort: "name"
+        as: target
+        concurrency: 2
+        workflow: deploy-target
+        vars:
+          service: "{{ target }}"
+          env: "{{ environment }}"
+
+      # Step 7: Final notification
+      - name: notify
+        type: shell_exec
+        when: "approved"
+        params:
+          command: echo
+          args: ["Deployment to {{ environment }} complete"]
+
+  - name: deploy-target
+    description: "Deploy a single service target"
+    vars:
+      service: null   # required, passed by parent
+      env: null        # required, passed by parent
+    steps:
+      - name: build
+        type: run_script
+        params:
+          args: ["echo 'building {{ service }} for {{ env }}'"]
+
+      - name: test
+        type: run_script
+        params:
+          args: ["echo 'testing {{ service }}' && sleep 5"]
+        timeout: 120
+
+      - name: release
+        type: run_script
+        when: "env == 'staging'"
+        params:
+          args: ["echo 'releasing {{ service }} to {{ env }}'"]
+```

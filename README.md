@@ -24,9 +24,18 @@ A [Markov chain](https://en.wikipedia.org/wiki/Markov_chain) is a system that tr
 - **Checkpoint/resume** — SQLite state store; resume failed runs from the last successful step
 - **K8s native** — creates `batch/v1` Jobs directly (no Argo dependency)
 
+## Documentation
+
+Full documentation is available at [docs/index.md](docs/index.md), including:
+
+- [Getting Started](docs/getting-started.md) — install and run your first workflow
+- [Language Reference](docs/reference/workflow-file.md) — complete YAML DSL schema
+- [Step Types](docs/reference/step-types.md) — all built-in step types
+- [Guides](docs/guides/writing-workflows.md) — practical how-to guides
+
 ## How is this different from X?
 
-See [docs/project-comparisons.md](docs/project-comparisons.md) for detailed comparisons with Ansible, Argo Workflows, Jenkins, Tekton, Kestra, CrewAI, and LangGraph.
+See [docs/design/project-comparisons.md](docs/design/project-comparisons.md) for detailed comparisons with Ansible, Argo Workflows, Jenkins, Tekton, Kestra, CrewAI, and LangGraph.
 
 ## Quick Start
 
@@ -115,7 +124,7 @@ pkg/executor/        Step executors (k8s_job, shell_exec, http_request)
 pkg/state/           Checkpoint store (SQLite)
 pkg/template/        Pongo2 template rendering
 examples/            Example workflow files
-docs/                Design documents and research
+docs/                Documentation (reference, guides, design docs)
 ```
 
 ## License

@@ -1,0 +1,215 @@
+# Callbacks
+
+Fire-and-forget event system for external observability. Errors in callbacks are logged but never fail the workflow. Inspired by Ansible callback plugins.
+
+## CLI flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--callback <url>` | string (repeatable) | none | Destination URL for events |
+| `--callback-header <key=value>` | string (repeatable) | none | HTTP headers sent with each request |
+| `--callback-tls-insecure` | bool | false | Skip TLS certificate verification |
+| `--callback-tls-cert <path>` | string | none | Client TLS certificate path |
+| `--callback-buffer-size <N>` | int | 1000 | Async send buffer size for HTTP callbacks |
+
+Multiple `--callback` flags can be specified to send events to multiple destinations simultaneously.
+
+## Supported schemes
+
+### jsonl:// -- File-based logging
+
+Appends one JSON line per event to a local file.
+
+| Behavior | Detail |
+|----------|--------|
+| Write mode | Append (`O_APPEND \| O_CREATE \| O_WRONLY`) |
+| Concurrency | Mutex-locked per write |
+| Durability | `fsync` after every event |
+| Format | One JSON object per line |
+
+```bash
+--callback jsonl:///var/log/markov-events.jsonl
+```
+
+### http:// / https:// -- Async HTTP POST
+
+Events are queued and sent asynchronously via a background goroutine.
+
+| Behavior | Detail |
+|----------|--------|
+| Method | POST |
+| Content-Type | application/json |
+| Buffer | Configurable via `--callback-buffer-size` (default 1000) |
+| Retries | 3 attempts with backoff: 0ms, 200ms, 400ms |
+| Timeout | 10s per request, 30s client timeout |
+| Retry logic | Retries on network errors and 5xx responses; does not retry 4xx |
+| Flush | `run_completed` and `run_failed` events block until sent |
+| Close | Drains the buffer with a 10s timeout |
+
+```bash
+--callback https://hooks.example.com/markov \
+--callback-header "Authorization=Bearer tok123"
+```
+
+### grpc:// / grpcs:// -- gRPC streaming
+
+Sends events via unary gRPC calls using a JSON codec (no protobuf compilation needed).
+
+| Behavior | Detail |
+|----------|--------|
+| RPC method | `/markov.MarkovCallback/SendEvent` |
+| Codec | JSON (custom codec, no protobuf) |
+| Timeout | 5s per send |
+| TLS | `grpcs://` enables TLS; uses `--callback-tls-cert` or falls back to insecure |
+| Payload | Wraps event in `{event_type, run_id, timestamp, payload}` envelope |
+
+```bash
+--callback grpcs://callback-server:9090 \
+--callback-tls-cert /etc/certs/client.pem
+```
+
+For plain gRPC without TLS:
+
+```bash
+--callback grpc://callback-server:9090
+```
+
+## Event types
+
+All events share a common header:
+
+```json
+{
+  "timestamp": "2025-01-15T10:30:00.123Z",
+  "run_id": "a1b2c3d4",
+  "event_type": "step_completed"
+}
+```
+
+### Run lifecycle events
+
+| Event Type | When Fired | Key Fields |
+|------------|------------|------------|
+| `run_started` | Run begins | `workflow_name`, `workflow_file`, `vars`, `forks`, `namespace` |
+| `run_completed` | Run succeeds | `workflow_name`, `duration_seconds` |
+| `run_failed` | Run fails | `workflow_name`, `error`, `duration_seconds` |
+| `run_resumed` | Run is resumed | `workflow_name`, `completed_steps`, `remaining_steps` |
+
+### Step lifecycle events
+
+| Event Type | When Fired | Key Fields |
+|------------|------------|------------|
+| `step_started` | Step begins | `workflow_name`, `step_name`, `step_type`, `resolved_type`, `params` |
+| `step_completed` | Step succeeds | `workflow_name`, `step_name`, `step_type`, `output`, `duration_seconds` |
+| `step_failed` | Step fails | `workflow_name`, `step_name`, `step_type`, `error`, `duration_seconds` |
+| `step_skipped` | Step skipped (when: false) | `workflow_name`, `step_name`, `reason` |
+
+### Kubernetes events
+
+| Event Type | When Fired | Key Fields |
+|------------|------------|------------|
+| `job_created` | K8s Job resource created | `workflow_name`, `step_name`, `step_type`, `job_name`, `namespace`, `pod_selector` |
+
+### Gate events
+
+| Event Type | When Fired | Key Fields |
+|------------|------------|------------|
+| `gate_evaluated` | Gate step completes | `workflow_name`, `step_name`, `action`, `fired_rules`, `facts` |
+
+### Sub-run events (for_each / workflow)
+
+| Event Type | When Fired | Key Fields |
+|------------|------------|------------|
+| `sub_run_started` | Sub-workflow begins | `parent_run_id`, `parent_step`, `workflow_name`, `for_each_key` |
+| `sub_run_completed` | Sub-workflow succeeds | `parent_run_id`, `parent_step`, `workflow_name`, `for_each_key`, `duration_seconds` |
+| `sub_run_failed` | Sub-workflow fails | `parent_run_id`, `parent_step`, `workflow_name`, `for_each_key`, `error`, `duration_seconds` |
+
+## Event lifecycle
+
+A typical workflow produces events in this order:
+
+```
+run_started
+  step_started (fetch-data)
+  step_completed (fetch-data)
+  step_started (deploy, resolved_type=for_each)
+    sub_run_started (deploy-api)
+      step_started (rollout)
+      job_created (rollout)
+      step_completed (rollout)
+    sub_run_completed (deploy-api)
+    sub_run_started (deploy-worker)
+      step_started (rollout)
+      job_created (rollout)
+      step_completed (rollout)
+    sub_run_completed (deploy-worker)
+  step_completed (deploy)
+  step_started (validate-gate)
+  gate_evaluated (validate-gate)
+  step_completed (validate-gate)
+run_completed
+```
+
+## Error isolation
+
+Callback errors never affect workflow execution:
+
+```go
+func (e *Engine) fireEvent(fn func(callback.Callback) error) {
+    for _, cb := range e.callbacks {
+        if err := fn(cb); err != nil {
+            log.Printf("callback error: %v", err)  // logged, not returned
+        }
+    }
+}
+```
+
+If a callback destination is unreachable, events are dropped after retries and the workflow continues normally.
+
+## Example: Full configuration
+
+```bash
+markov run pipeline.yaml \
+  --callback jsonl:///var/log/markov-events.jsonl \
+  --callback https://hooks.example.com/markov \
+  --callback grpcs://metrics.internal:9090 \
+  --callback-header "Authorization=Bearer tok123" \
+  --callback-header "X-Team=platform" \
+  --callback-tls-cert /etc/certs/client.pem \
+  --callback-buffer-size 2000 \
+  --verbose
+```
+
+This sends every event to three destinations simultaneously:
+1. A local JSONL file for debugging and audit.
+2. An HTTPS webhook for integration (Slack, PagerDuty, custom dashboards).
+3. A gRPC server for metrics collection.
+
+## Example: JSONL event output
+
+```json
+{"timestamp":"2025-01-15T10:30:00.123Z","run_id":"a1b2c3d4","event_type":"run_started","workflow_name":"deploy","workflow_file":"deploy.yaml","vars":{"env":"prod"},"forks":5,"namespace":"default"}
+{"timestamp":"2025-01-15T10:30:00.456Z","run_id":"a1b2c3d4","event_type":"step_started","workflow_name":"deploy","step_name":"fetch-config","step_type":"shell_exec","resolved_type":"shell_exec","params":{"command":"cat config.yaml"}}
+{"timestamp":"2025-01-15T10:30:01.789Z","run_id":"a1b2c3d4","event_type":"step_completed","workflow_name":"deploy","step_name":"fetch-config","step_type":"shell_exec","output":{"stdout":"...","rc":0},"duration_seconds":1.333}
+{"timestamp":"2025-01-15T10:30:45.000Z","run_id":"a1b2c3d4","event_type":"run_completed","workflow_name":"deploy","duration_seconds":44.877}
+```
+
+## Consuming events
+
+### Tail JSONL in real time
+
+```bash
+tail -f /var/log/markov-events.jsonl | jq -r '[.event_type, .step_name // .workflow_name, .duration_seconds // "" | tostring] | join("\t")'
+```
+
+### Filter failures
+
+```bash
+cat /var/log/markov-events.jsonl | jq -c 'select(.event_type | endswith("_failed"))'
+```
+
+### Build a timeline
+
+```bash
+cat /var/log/markov-events.jsonl | jq -c 'select(.event_type == "step_completed") | {step: .step_name, duration: .duration_seconds}' | sort -t: -k2 -rn
+```
