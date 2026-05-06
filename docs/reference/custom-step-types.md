@@ -1,3 +1,4 @@
+{% raw %}
 # Custom Step Types
 
 Custom step types let you define reusable abstractions on top of [built-in primitives](step-types.md). They are defined in the top-level `step_types` map of a workflow file and can be used anywhere a primitive type would be used.
@@ -246,3 +247,4 @@ The resolved parameters passed to the `k8s_job` executor are:
 | `args` | `["echo 'custom'"]` | step params |
 
 The merge is a flat key-level override, not a deep merge. If a step overrides `resources`, it replaces the entire `resources` map from the step type, not individual keys within it.
+{% endraw %}

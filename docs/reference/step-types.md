@@ -1,3 +1,4 @@
+{% raw %}
 # Built-in Step Types
 
 Markov ships with eight primitive step types. Every step in a workflow must resolve to one of these primitives, either directly or through a [custom step type](custom-step-types.md).
@@ -645,3 +646,4 @@ This type is recognized by the parser as a valid primitive, so workflow YAML ref
     prompt: "Classify this issue..."
   register: classification
 ```
+{% endraw %}

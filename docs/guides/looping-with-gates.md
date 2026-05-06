@@ -1,3 +1,4 @@
+{% raw %}
 # Looping with Gates
 
 Markov has no built-in loop construct. Instead, workflows loop by recursively invoking themselves, with gate steps controlling when to stop. This follows the Markov chain philosophy: each iteration evaluates the current state and decides the next transition.
@@ -224,3 +225,4 @@ workflows:
 - [Conditional Logic](conditional-logic.md) — when vs gates vs assert
 - [Rule Engine Reference](../reference/rule-engine.md) — complete rule syntax and evaluation
 - [Variables and Context](../reference/variables-and-context.md) — how variables flow through recursive workflows
+{% endraw %}

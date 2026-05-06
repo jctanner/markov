@@ -1,3 +1,4 @@
+{% raw %}
 # Rule Engine Reference
 
 Markov includes a forward-chaining rule engine powered by [Grule](https://github.com/hyperjumptech/grule-rule-engine). Rules are defined at the top level of the workflow file and evaluated by `gate` steps. The engine translates Python/Jinja2-like condition syntax into Grule's GRL format, so rule authors do not need to learn GRL directly.
@@ -317,3 +318,4 @@ workflows:
 - `--var score=85 --var severity=critical` -- Both rules evaluate. Both fire. `rule_reject` has salience 20 vs salience 10, so its action wins. Gate action: `skip`. Decision: `rejected`.
 
 - `--var score=50 --var severity=low` -- Neither rule fires (score < 70, severity not critical). Gate action: `continue` (default). No decision facts are set.
+{% endraw %}

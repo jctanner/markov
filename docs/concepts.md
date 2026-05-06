@@ -1,3 +1,4 @@
+{% raw %}
 # Core Concepts
 
 This page explains the mental model behind markov. For field-by-field details, see the [Reference](reference/workflow-file.md) section.
@@ -67,3 +68,4 @@ Every step result is persisted to a SQLite database. If a workflow fails, `marko
 ## Callbacks
 
 Markov fires events at key lifecycle points (run started, step completed, gate evaluated, etc.) to external systems via HTTP, gRPC, or JSONL file backends. Callback errors are logged but never fail the workflow.
+{% endraw %}

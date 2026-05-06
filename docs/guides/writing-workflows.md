@@ -1,3 +1,4 @@
+{% raw %}
 # Writing Workflows
 
 This guide walks through building a markov workflow step by step, from a minimal example to a multi-workflow pipeline.
@@ -247,3 +248,4 @@ This checks that the entrypoint exists, workflow/step names are unique, types re
 - [Conditional Logic](conditional-logic.md) — when vs gates vs assert
 - [Step Types Reference](../reference/step-types.md) — all built-in step types
 - [Template Engine Reference](../reference/template-engine.md) — filters, expressions, and template syntax
+{% endraw %}

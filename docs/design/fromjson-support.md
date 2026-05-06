@@ -1,3 +1,4 @@
+{% raw %}
 # Adding `fromjson` filter to markov's template engine
 
 ## Problem
@@ -121,3 +122,4 @@ workflows:
 ```
 
 Run: `markov run examples/fromjson-test.yaml --verbose`
+{% endraw %}

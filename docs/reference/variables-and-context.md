@@ -1,3 +1,4 @@
+{% raw %}
 # Variables and Context Reference
 
 Every markov workflow execution operates on a **context** -- a `map[string]any` that holds all variables available during runtime. Templates, conditions, and expressions all resolve against this context.
@@ -252,3 +253,4 @@ The `resolveContextPath` function (in `engine.go:1017`) resolves dot-separated p
 - Array index access is **not** supported in path resolution (use template syntax `{{ list.0 }}` instead, which is handled by pongo2).
 
 This function is used internally for `for_each` list resolution, `from` paths in lookup facts, and the `fromjson` direct resolution shortcut.
+{% endraw %}

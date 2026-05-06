@@ -1,3 +1,4 @@
+{% raw %}
 # Conditional Logic
 
 Markov provides three mechanisms for conditional execution: `when`, `gate`, and `assert`. This guide explains when to use each.
@@ -178,3 +179,4 @@ workflows:
 - [Looping with Gates](looping-with-gates.md) — recursive workflows and retry loops
 - [Rule Engine Reference](../reference/rule-engine.md) — complete rule syntax
 - [Template Engine Reference](../reference/template-engine.md) — expression syntax for when conditions
+{% endraw %}

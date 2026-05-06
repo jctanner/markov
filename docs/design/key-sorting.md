@@ -1,3 +1,4 @@
+{% raw %}
 # Feature Request: Stable `for_each` Iteration Keys
 
 ## Problem
@@ -170,3 +171,4 @@ does), and only retry items whose key has no completed child run.
 Sub-runs would be created with `ForEachKey` values like
 `"RHOAIENG-19201"` and `"RHOAIENG-19202"` — stable across restarts,
 resumes, and reordering.
+{% endraw %}

@@ -1,3 +1,4 @@
+{% raw %}
 # Fan-Out Patterns
 
 This guide covers patterns for using `for_each` to run steps or sub-workflows in parallel.
@@ -201,3 +202,4 @@ When one item fails during for_each:
 - [Looping with Gates](looping-with-gates.md) — recursive workflows controlled by rules
 - [for_each Reference](../reference/for-each.md) — complete field reference
 - [Variables and Context](../reference/variables-and-context.md) — how data flows through fan-outs
+{% endraw %}

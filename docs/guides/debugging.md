@@ -1,3 +1,4 @@
+{% raw %}
 # Debugging Workflows
 
 This guide covers tools and techniques for investigating workflow problems.
@@ -167,3 +168,4 @@ sqlite3 markov-state.db "SELECT run_id, for_each_key, status FROM runs WHERE par
 - [CLI Reference](../reference/cli.md) — all commands and flags
 - [State Store Reference](../reference/state-store.md) — database schema and resume behavior
 - [Callbacks Reference](../reference/callbacks.md) — event types for monitoring
+{% endraw %}

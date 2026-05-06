@@ -1,3 +1,4 @@
+{% raw %}
 # Template Engine Reference
 
 Markov uses [Pongo2 v6](https://github.com/flosch/pongo2/v6) for template rendering -- a Jinja2/Django-compatible template engine for Go. Templates are evaluated at runtime against the workflow context to produce dynamic values for step parameters, conditions, and variable assignments.
@@ -198,3 +199,4 @@ After template rendering in `set_fact` steps, string results are coerced to nati
 | Anything else | `string` | Kept as-is |
 
 Coercion order matters: integer parsing is attempted before float parsing. JSON parsing is only attempted if the string starts with `[` or `{`.
+{% endraw %}

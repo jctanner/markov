@@ -1,3 +1,4 @@
+{% raw %}
 # Getting Started
 
 Get from zero to a running workflow in under 5 minutes.
@@ -120,3 +121,4 @@ Items process 3 at a time (controlled by `forks: 3`).
 - [Writing Workflows](guides/writing-workflows.md) — step-by-step workflow building guide
 - [Language Reference](reference/workflow-file.md) — complete YAML schema reference
 - [Step Types](reference/step-types.md) — all built-in step types
+{% endraw %}

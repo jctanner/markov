@@ -1,3 +1,4 @@
+{% raw %}
 # Markov — MVP Design
 
 ## Overview
@@ -340,3 +341,4 @@ markov/
 | `gopkg.in/yaml.v3` | YAML parsing |
 | `modernc.org/sqlite` | SQLite driver (pure Go, no CGO) |
 | `github.com/google/uuid` | Run ID generation |
+{% endraw %}

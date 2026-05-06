@@ -1,3 +1,4 @@
+{% raw %}
 # for_each
 
 Iterates over a list, running a step or sub-workflow per item with concurrency control.
@@ -247,3 +248,4 @@ steps:
       key: "{{ issue.issue_key }}"
       summary: "{{ issue.summary }}"
 ```
+{% endraw %}

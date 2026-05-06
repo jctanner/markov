@@ -1,3 +1,4 @@
+{% raw %}
 # Artifacts
 
 Artifacts load files from the local filesystem or Kubernetes pods into the workflow context as structured data.
@@ -290,3 +291,4 @@ steps:
       replicas: 3
       timeout: 30
 ```
+{% endraw %}
