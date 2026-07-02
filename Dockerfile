@@ -7,7 +7,7 @@ RUN CGO_ENABLED=0 go build -o /markov ./cmd/markov
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash coreutils curl git jq ca-certificates procps python3 \
+    bash coreutils curl git jq ca-certificates procps python3 python3-yaml \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=build /markov /usr/local/bin/markov
 ENTRYPOINT ["markov"]
