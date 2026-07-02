@@ -12,7 +12,7 @@ Users need to understand when to choose single-file versus directory mode and ho
 
 - [ ] Add a directory workflow section to the workflow file reference.
 - [ ] Add guide coverage for organizing large workflows.
-- [ ] Add an executable example under `examples/`.
+- [ ] Add an executable example under `examples/dir-based-hello-world/`.
 - [ ] Include commands for `markov validate <directory>` and `markov run <directory>`.
 - [ ] Document duplicate-name behavior and relative path behavior.
 
@@ -21,7 +21,7 @@ Users need to understand when to choose single-file versus directory mode and ho
 - `docs/reference/workflow-file.md`
 - `docs/guides/writing-workflows.md`
 - `docs/getting-started.md`
-- `examples/`
+- `examples/dir-based-hello-world/`
 
 ## Status
 
@@ -30,4 +30,3 @@ Pending
 ## Notes
 
 The example should be equivalent to a compact single-file workflow so tests can compare parser output across both forms.
-

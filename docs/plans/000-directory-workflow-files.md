@@ -115,4 +115,4 @@ Recommendation for v1: paths owned by the workflow language, such as external ru
 - Directory mode rejects duplicate workflow, rule, and step type names.
 - Existing external rule file support still works.
 - Docs and examples demonstrate the directory layout.
-
+- `examples/dir-based-hello-world/` provides a minimal runnable directory workflow.
