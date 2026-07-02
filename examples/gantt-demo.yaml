@@ -1,0 +1,53 @@
+---
+# gantt-demo — 10-item fan-out with random delays for visual Gantt chart testing.
+
+entrypoint: main
+
+forks: 5
+
+vars:
+  items: ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet"]
+
+workflows:
+  - name: main
+    steps:
+      - name: setup
+        type: shell_exec
+        params:
+          command: "bash -c 'echo initializing && sleep 2'"
+
+      - name: process_all
+        for_each: "items"
+        as: item
+        workflow: process_item
+        vars:
+          item_id: "{{ item }}"
+
+      - name: finalize
+        type: shell_exec
+        params:
+          command: "bash -c 'echo finalizing && sleep 1'"
+
+  - name: process_item
+    vars:
+      item_id: null
+    steps:
+      - name: fetch
+        type: shell_exec
+        params:
+          command: "bash -c 'echo fetch {{ item_id }} && sleep $(( RANDOM % 5 + 1 ))'"
+
+      - name: validate
+        type: shell_exec
+        params:
+          command: "bash -c 'echo validate {{ item_id }} && sleep $(( RANDOM % 3 + 1 ))'"
+
+      - name: transform
+        type: shell_exec
+        params:
+          command: "bash -c 'echo transform {{ item_id }} && sleep $(( RANDOM % 4 + 1 ))'"
+
+      - name: load
+        type: shell_exec
+        params:
+          command: "bash -c 'echo load {{ item_id }} && sleep $(( RANDOM % 2 + 1 ))'"

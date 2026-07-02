@@ -1,0 +1,172 @@
+---
+# fanout-100 — stress test with 100 concurrent work items.
+#
+# Simulates a batch processing pipeline that:
+#   1. Generates a manifest of 100 items
+#   2. Fans out to process each item in a sub-workflow
+#   3. Each sub-workflow validates, transforms, and loads the item
+#   4. Collects results and prints a summary
+#
+# Workflow structure:
+#   main
+#     ├── generate_manifest
+#     ├── process_all (for_each: 100 items, concurrency: 20)
+#     │     └── process_item
+#     │           ├── validate
+#     │           ├── transform
+#     │           └── load
+#     └── summary
+
+entrypoint: main
+
+forks: 20
+
+vars:
+  batch_id: "batch-001"
+  items:
+    - "item-000"
+    - "item-001"
+    - "item-002"
+    - "item-003"
+    - "item-004"
+    - "item-005"
+    - "item-006"
+    - "item-007"
+    - "item-008"
+    - "item-009"
+    - "item-010"
+    - "item-011"
+    - "item-012"
+    - "item-013"
+    - "item-014"
+    - "item-015"
+    - "item-016"
+    - "item-017"
+    - "item-018"
+    - "item-019"
+    - "item-020"
+    - "item-021"
+    - "item-022"
+    - "item-023"
+    - "item-024"
+    - "item-025"
+    - "item-026"
+    - "item-027"
+    - "item-028"
+    - "item-029"
+    - "item-030"
+    - "item-031"
+    - "item-032"
+    - "item-033"
+    - "item-034"
+    - "item-035"
+    - "item-036"
+    - "item-037"
+    - "item-038"
+    - "item-039"
+    - "item-040"
+    - "item-041"
+    - "item-042"
+    - "item-043"
+    - "item-044"
+    - "item-045"
+    - "item-046"
+    - "item-047"
+    - "item-048"
+    - "item-049"
+    - "item-050"
+    - "item-051"
+    - "item-052"
+    - "item-053"
+    - "item-054"
+    - "item-055"
+    - "item-056"
+    - "item-057"
+    - "item-058"
+    - "item-059"
+    - "item-060"
+    - "item-061"
+    - "item-062"
+    - "item-063"
+    - "item-064"
+    - "item-065"
+    - "item-066"
+    - "item-067"
+    - "item-068"
+    - "item-069"
+    - "item-070"
+    - "item-071"
+    - "item-072"
+    - "item-073"
+    - "item-074"
+    - "item-075"
+    - "item-076"
+    - "item-077"
+    - "item-078"
+    - "item-079"
+    - "item-080"
+    - "item-081"
+    - "item-082"
+    - "item-083"
+    - "item-084"
+    - "item-085"
+    - "item-086"
+    - "item-087"
+    - "item-088"
+    - "item-089"
+    - "item-090"
+    - "item-091"
+    - "item-092"
+    - "item-093"
+    - "item-094"
+    - "item-095"
+    - "item-096"
+    - "item-097"
+    - "item-098"
+    - "item-099"
+
+workflows:
+  - name: main
+    steps:
+      - name: generate_manifest
+        type: shell_exec
+        params:
+          command: echo
+          args: ["[{{ batch_id }}] manifest: {{ items | length }} items"]
+
+      - name: process_all
+        for_each: "items"
+        as: item
+        workflow: process_item
+        vars:
+          item_id: "{{ item }}"
+          batch_id: "{{ batch_id }}"
+
+      - name: summary
+        type: shell_exec
+        params:
+          command: echo
+          args: ["[{{ batch_id }}] complete: processed {{ items | length }} items"]
+
+  - name: process_item
+    vars:
+      item_id: null
+      batch_id: null
+    steps:
+      - name: validate
+        type: shell_exec
+        params:
+          command: echo
+          args: ["[{{ batch_id }}] validate {{ item_id }}"]
+
+      - name: transform
+        type: shell_exec
+        params:
+          command: echo
+          args: ["[{{ batch_id }}] transform {{ item_id }}"]
+
+      - name: load
+        type: shell_exec
+        params:
+          command: echo
+          args: ["[{{ batch_id }}] load {{ item_id }}"]

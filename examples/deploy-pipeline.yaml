@@ -1,0 +1,215 @@
+---
+# deploy-pipeline — staged deployment with gates, fan-out, and recursive rollout.
+#
+# Demonstrates:
+#   1. Fan-out: deploy to multiple environments concurrently
+#   2. Gates: approval rules control promotion between stages
+#   3. Recursion: retry_loop retries failed health checks up to max_retries
+#   4. Conditional execution: steps skipped based on gate outcomes
+#   5. Sub-workflows: per-environment deploy is a full pipeline
+#
+# Workflow structure:
+#   main
+#     ├── preflight
+#     ├── build
+#     ├── test_gate (rules: tests must pass)
+#     ├── deploy_all (for_each environment)
+#     │     └── deploy_env
+#     │           ├── announce
+#     │           ├── apply_manifests
+#     │           ├── health_check → retry_loop (recursive)
+#     │           │     ├── retry_gate
+#     │           │     ├── check_health
+#     │           │     ├── eval_health
+#     │           │     ├── increment_retry
+#     │           │     └── next_retry → retry_loop (recurse)
+#     │           ├── promotion_gate
+#     │           ├── smoke_tests
+#     │           └── mark_complete
+#     └── summary
+
+entrypoint: main
+
+forks: 3
+
+vars:
+  environments: ["staging", "canary", "production"]
+  build_version: "2.4.0"
+  test_coverage: 87
+  min_coverage: 80
+  retry_count: 0
+  max_retries: 3
+  health_status: "unknown"
+
+rules:
+  - name: tests_pass
+    description: "Allow deployment when test coverage meets threshold"
+    salience: 100
+    when: "test_coverage >= min_coverage"
+    action: continue
+    set_fact:
+      tests_approved: true
+
+  - name: tests_fail
+    description: "Block deployment on insufficient coverage"
+    salience: 200
+    when: "test_coverage < min_coverage"
+    action: skip
+    set_fact:
+      tests_approved: false
+      block_reason: "Test coverage {{ test_coverage }}% below minimum {{ min_coverage }}%"
+
+  - name: retry_continue
+    description: "Keep retrying health checks"
+    salience: 10
+    when: "retry_count < max_retries and health_status != 'healthy'"
+    action: continue
+    set_fact:
+      retries_exhausted: false
+
+  - name: retry_exhausted
+    description: "Stop retrying — max retries reached or healthy"
+    salience: 100
+    when: "retry_count >= max_retries or health_status == 'healthy'"
+    action: skip
+    set_fact:
+      retries_exhausted: true
+
+  - name: promote_if_healthy
+    description: "Allow promotion for healthy deployments"
+    salience: 50
+    when: "health_status == 'healthy'"
+    action: continue
+    set_fact:
+      promoted: true
+
+  - name: block_unhealthy
+    description: "Block promotion for unhealthy deployments"
+    salience: 200
+    when: "health_status != 'healthy'"
+    action: skip
+    set_fact:
+      promoted: false
+      promotion_blocked: "Health check failed after {{ retry_count }} retries"
+
+workflows:
+  - name: main
+    steps:
+      - name: preflight
+        type: shell_exec
+        params:
+          command: echo
+          args: ["preflight: checking build {{ build_version }}"]
+
+      - name: build
+        type: shell_exec
+        params:
+          command: echo
+          args: ["building v{{ build_version }} (coverage: {{ test_coverage }}%)"]
+
+      - name: test_gate
+        type: gate
+        rules:
+          - tests_pass
+          - tests_fail
+
+      - name: deploy_all
+        when: "tests_approved"
+        for_each: "environments"
+        as: env
+        workflow: deploy_env
+        vars:
+          environment: "{{ env }}"
+          build_version: "{{ build_version }}"
+          retry_count: 0
+          health_status: "unknown"
+
+      - name: summary
+        type: shell_exec
+        params:
+          command: echo
+          args: ["pipeline complete for v{{ build_version }}"]
+
+  - name: deploy_env
+    vars:
+      environment: null
+      build_version: null
+      retry_count: null
+      health_status: null
+    steps:
+      - name: announce
+        type: shell_exec
+        params:
+          command: echo
+          args: ["deploying v{{ build_version }} to {{ environment }}"]
+
+      - name: apply_manifests
+        type: shell_exec
+        params:
+          command: echo
+          args: ["[{{ environment }}] applying manifests for v{{ build_version }}"]
+
+      - name: health_check
+        workflow: retry_loop
+        vars:
+          environment: "{{ environment }}"
+          retry_count: 0
+          health_status: "unknown"
+
+      - name: promotion_gate
+        type: gate
+        rules:
+          - promote_if_healthy
+          - block_unhealthy
+
+      - name: smoke_tests
+        type: shell_exec
+        when: "promoted"
+        params:
+          command: echo
+          args: ["[{{ environment }}] running smoke tests for v{{ build_version }}"]
+
+      - name: mark_complete
+        type: shell_exec
+        params:
+          command: echo
+          args: ["[{{ environment }}] deploy complete (promoted={{ promoted }})"]
+
+  - name: retry_loop
+    vars:
+      environment: null
+      retry_count: null
+      health_status: null
+    steps:
+      - name: retry_gate
+        type: gate
+        rules:
+          - retry_continue
+          - retry_exhausted
+
+      - name: check_health
+        type: shell_exec
+        when: "not retries_exhausted"
+        params:
+          command: echo
+          args: ["[{{ environment }}] health check attempt {{ retry_count + 1 }}/{{ max_retries }}"]
+
+      - name: eval_health
+        type: set_fact
+        when: "not retries_exhausted"
+        vars:
+          health_status: "healthy"
+
+      - name: increment_retry
+        type: set_fact
+        when: "not retries_exhausted"
+        vars:
+          retry_count: "{{ retry_count + 1 }}"
+
+      - name: next_retry
+        workflow: retry_loop
+        when: "not retries_exhausted and health_status != 'healthy'"
+        vars:
+          environment: "{{ environment }}"
+          retry_count: "{{ retry_count }}"
+          health_status: "{{ health_status }}"
