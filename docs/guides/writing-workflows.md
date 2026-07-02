@@ -37,6 +37,55 @@ workflows:                # One or more workflow definitions
 
 Only `entrypoint` and `workflows` are required.
 
+## Directory Workflows
+
+Single-file workflows are still the simplest place to start. When a workflow grows, you can split it into a directory and pass the directory path to `markov run` or `markov validate`.
+
+```text
+my-pipeline/
+  meta.yaml
+  vars.yaml
+  rules.yaml
+  step_types.yaml
+  workflows/
+    main.yaml
+    per-item.yaml
+```
+
+The category files contain their category directly:
+
+```yaml
+# meta.yaml
+entrypoint: main
+forks: 3
+```
+
+```yaml
+# vars.yaml
+items: ["alpha", "bravo", "charlie"]
+```
+
+```yaml
+# workflows/main.yaml
+name: main
+steps:
+  - name: process
+    for_each: items
+    as: item
+    type: shell_exec
+    params:
+      command: "echo '{{ item }}'"
+```
+
+Run it with:
+
+```bash
+markov validate my-pipeline
+markov run my-pipeline
+```
+
+See `examples/dir-based-hello-world/` for a minimal runnable directory workflow.
+
 ## Starting Simple
 
 The simplest workflow runs a shell command:

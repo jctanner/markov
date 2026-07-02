@@ -115,6 +115,27 @@ markov run fanout.yaml --verbose
 
 Items process 3 at a time (controlled by `forks: 3`).
 
+## Try a Directory Workflow
+
+Markov can also run a workflow directory. The directory splits the same workflow schema across required files:
+
+```text
+examples/dir-based-hello-world/
+  meta.yaml
+  vars.yaml
+  rules.yaml
+  step_types.yaml
+  workflows/
+    main.yaml
+```
+
+Validate and run it:
+
+```bash
+markov validate examples/dir-based-hello-world
+markov run examples/dir-based-hello-world --verbose
+```
+
 ## What's Next
 
 - [Core Concepts](concepts.md) — understand the execution model

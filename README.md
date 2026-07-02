@@ -45,8 +45,14 @@ go build -o markov ./cmd/markov
 # Validate a workflow file
 markov validate examples/k8s-job-test.yaml
 
+# Validate a directory workflow
+markov validate examples/dir-based-hello-world
+
 # Run a workflow
 markov run examples/k8s-job-test.yaml --namespace markov-test --verbose
+
+# Run a directory workflow
+markov run examples/dir-based-hello-world --verbose
 
 # Check status
 markov status <run-id> --steps

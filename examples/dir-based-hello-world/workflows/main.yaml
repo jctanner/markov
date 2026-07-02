@@ -1,0 +1,21 @@
+name: main
+steps:
+  - name: say_hello
+    type: echo_local
+    params:
+      command: "echo '{{ greeting }}'"
+    register: hello_result
+
+  - name: process_items
+    for_each: items
+    as: item
+    workflow: process_item
+    vars:
+      item_name: "{{ item }}"
+    register: item_results
+
+  - name: summarize
+    type: echo_local
+    params:
+      command: "echo 'processed {{ item_results | length }} items'"
+

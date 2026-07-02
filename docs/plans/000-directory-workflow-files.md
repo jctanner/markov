@@ -45,6 +45,7 @@ pipeline/
 - `rules.yaml` contains the top-level `rules` list.
 - `step_types.yaml` contains the top-level `step_types` map.
 - `workflows/*.yaml` files each contain one workflow object directly, without a wrapping `workflows:` key.
+- `vars.yaml`, `rules.yaml`, and `step_types.yaml` may be empty files.
 
 Example workflow file:
 
@@ -72,7 +73,7 @@ steps:
 - Engine behavior changes.
 - New workflow execution semantics.
 
-## Open Detail: Relative Path Resolution
+## Relative Path Resolution
 
 Relative path resolution controls how paths inside split files are interpreted.
 
@@ -104,7 +105,7 @@ There are two possible meanings:
 - Directory-root-relative: `pipeline/artifacts/report.yaml`
 - File-relative: `pipeline/workflows/artifacts/report.yaml`
 
-Recommendation for v1: paths owned by the workflow language, such as external rule includes, should resolve from the workflow directory root for consistency. Runtime artifact paths should remain runtime paths exactly as written, because they may refer to container paths such as `/app/artifacts/result.yaml`.
+For v1, paths owned by the workflow language, such as external rule includes, resolve from the workflow directory root for consistency. Runtime artifact paths remain exactly as written, because they may refer to container paths such as `/app/artifacts/result.yaml`.
 
 ## Acceptance Criteria
 

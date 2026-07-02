@@ -3,6 +3,8 @@
 
 This is the canonical reference for the Markov workflow file format. A workflow file is a YAML document that defines one or more workflows, their steps, variables, rules, and custom step types.
 
+Markov accepts either a single workflow YAML file or a workflow directory. Both input forms resolve to the same runtime schema.
+
 ## Top-Level Fields
 
 | Field | YAML Key | Type | Required | Default | Description |
@@ -14,6 +16,85 @@ This is the canonical reference for the Markov workflow file format. A workflow 
 | Rules | `rules` | Rule[] | no | `[]` | Named rule definitions used by `gate` steps. Rules can also be loaded from external files. |
 | StepTypes | `step_types` | map[string]StepType | no | `{}` | User-defined step type definitions that wrap a primitive type with default parameters. |
 | Workflows | `workflows` | Workflow[] | yes | -- | List of workflow definitions. At least one must be defined, and the entrypoint must reference one by name. |
+
+---
+
+## Directory Workflow Layout
+
+For larger workflows, pass a directory instead of a single YAML file:
+
+```bash
+markov validate examples/dir-based-hello-world
+markov run examples/dir-based-hello-world
+```
+
+Directory mode uses required conventional filenames:
+
+```text
+pipeline/
+  meta.yaml
+  vars.yaml
+  rules.yaml
+  step_types.yaml
+  workflows/
+    main.yaml
+    deploy.yaml
+```
+
+The files map directly to the single-file schema:
+
+| File | YAML Shape | Description |
+|------|------------|-------------|
+| `meta.yaml` | map | `entrypoint`, `namespace`, and `forks` |
+| `vars.yaml` | map | Top-level variables, without a wrapping `vars:` key |
+| `rules.yaml` | list | Rule definitions, without a wrapping `rules:` key |
+| `step_types.yaml` | map | Step type definitions, without a wrapping `step_types:` key |
+| `workflows/*.yaml` | map | One workflow object per file, without a wrapping `workflows:` key |
+
+Minimal example:
+
+```yaml
+# meta.yaml
+entrypoint: main
+forks: 2
+```
+
+```yaml
+# vars.yaml
+greeting: hello
+```
+
+```yaml
+# rules.yaml
+[]
+```
+
+```yaml
+# step_types.yaml
+echo_local:
+  base: shell_exec
+```
+
+```yaml
+# workflows/main.yaml
+name: main
+steps:
+  - name: hello
+    type: echo_local
+    params:
+      command: "echo '{{ greeting }}'"
+```
+
+Validation runs after the directory is merged into a single in-memory workflow file. Duplicate workflow names and duplicate rule names are validation errors. Missing required category files are errors; empty category files are allowed for `vars.yaml`, `rules.yaml`, and `step_types.yaml`.
+
+External rule includes still use the `file` field. In directory mode, relative rule include paths resolve from the workflow directory root:
+
+```yaml
+# rules.yaml
+- file: rules/common.yaml
+```
+
+Runtime artifact paths are left exactly as written because they may refer to container paths or mounted volumes.
 
 ---
 

@@ -12,10 +12,10 @@ Decision record: [ADR-0001: Directory Workflow File Layout](../decisions/ADR-000
 
 ## Tasks
 
-- [Define directory workflow schema](../tasks/pending/directory-workflow-schema.md)
-- [Implement directory loader and merge validation](../tasks/pending/directory-loader-merge-validation.md)
-- [Wire directory input into CLI commands](../tasks/pending/directory-cli-integration.md)
-- [Add directory workflow documentation and examples](../tasks/pending/directory-docs-and-examples.md)
+- [Define directory workflow schema](../tasks/done/directory-workflow-schema.md)
+- [Implement directory loader and merge validation](../tasks/done/directory-loader-merge-validation.md)
+- [Wire directory input into CLI commands](../tasks/done/directory-cli-integration.md)
+- [Add directory workflow documentation and examples](../tasks/done/directory-docs-and-examples.md)
 
 ## Acceptance Criteria
 

@@ -16,5 +16,5 @@ Discovered:
 
 Next:
 
-- Confirm the relative path behavior for external rule includes.
-- Move the first task from `pending/` to `current/` when implementation starts.
+- Directory workflow support is implemented and verified with focused tests.
+- Full `go test ./...` still cannot complete in this sandbox because callback tests require local TCP listeners.

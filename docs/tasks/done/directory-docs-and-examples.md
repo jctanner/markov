@@ -10,11 +10,11 @@ Users need to understand when to choose single-file versus directory mode and ho
 
 ## Acceptance Criteria
 
-- [ ] Add a directory workflow section to the workflow file reference.
-- [ ] Add guide coverage for organizing large workflows.
-- [ ] Add an executable example under `examples/dir-based-hello-world/`.
-- [ ] Include commands for `markov validate <directory>` and `markov run <directory>`.
-- [ ] Document duplicate-name behavior and relative path behavior.
+- [x] Add a directory workflow section to the workflow file reference.
+- [x] Add guide coverage for organizing large workflows.
+- [x] Add an executable example under `examples/dir-based-hello-world/`.
+- [x] Include commands for `markov validate <directory>` and `markov run <directory>`.
+- [x] Document duplicate-name behavior and relative path behavior.
 
 ## Files Likely Involved
 
@@ -25,7 +25,7 @@ Users need to understand when to choose single-file versus directory mode and ho
 
 ## Status
 
-Pending
+Done
 
 ## Notes
 

@@ -19,21 +19,21 @@ import (
 )
 
 var (
-	flagVars       []string
-	flagWorkflow   string
-	flagForks      int
-	flagStateStore string
-	flagNamespace  string
-	flagKubeconfig string
-	flagSteps              bool
-	flagVerbose            bool
-	flagCallbacks          []string
-	flagCallbackHeaders    []string
+	flagVars                []string
+	flagWorkflow            string
+	flagForks               int
+	flagStateStore          string
+	flagNamespace           string
+	flagKubeconfig          string
+	flagSteps               bool
+	flagVerbose             bool
+	flagCallbacks           []string
+	flagCallbackHeaders     []string
 	flagCallbackTLSInsecure bool
-	flagCallbackTLSCert    string
-	flagCallbackBufferSize int
-	flagDebug              bool
-	flagRunID              string
+	flagCallbackTLSCert     string
+	flagCallbackBufferSize  int
+	flagDebug               bool
+	flagRunID               string
 
 	saTokenPath     = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 	saNamespacePath = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
@@ -61,7 +61,7 @@ func main() {
 	}
 
 	runCmd := &cobra.Command{
-		Use:   "run <file.yaml>",
+		Use:   "run <file.yaml|directory>",
 		Short: "Run a workflow",
 		Args:  cobra.ExactArgs(1),
 		RunE:  runWorkflow,
@@ -107,8 +107,8 @@ func main() {
 	listCmd.Flags().StringVar(&flagStateStore, "state-store", stateStorePath, "SQLite state store path")
 
 	validateCmd := &cobra.Command{
-		Use:   "validate <file.yaml>",
-		Short: "Validate a workflow file",
+		Use:   "validate <file.yaml|directory>",
+		Short: "Validate a workflow file or directory",
 		Args:  cobra.ExactArgs(1),
 		RunE:  validateWorkflow,
 	}
@@ -168,6 +168,7 @@ func runWorkflow(cmd *cobra.Command, args []string) error {
 	eng := engine.New(wfFile, store, executors)
 	eng.Verbose = flagVerbose
 	eng.RunID = flagRunID
+	eng.SourcePath = args[0]
 
 	cbs, err := buildCallbacks()
 	if err != nil {
@@ -221,6 +222,7 @@ func resumeWorkflow(cmd *cobra.Command, args []string) error {
 	}
 
 	eng := engine.New(wfFile, store, executors)
+	eng.SourcePath = run.WorkflowFile
 	return eng.Resume(ctx, args[0])
 }
 

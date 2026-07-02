@@ -3,11 +3,21 @@ package parser
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
 
 	"gopkg.in/yaml.v3"
 )
 
 func ParseFile(path string) (*WorkflowFile, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("stat workflow path: %w", err)
+	}
+	if info.IsDir() {
+		return ParseDir(path)
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading workflow file: %w", err)
@@ -15,12 +25,68 @@ func ParseFile(path string) (*WorkflowFile, error) {
 	return Parse(data)
 }
 
-func Parse(data []byte) (*WorkflowFile, error) {
+func ParseDir(path string) (*WorkflowFile, error) {
 	var wf WorkflowFile
-	if err := yaml.Unmarshal(data, &wf); err != nil {
-		return nil, fmt.Errorf("parsing workflow YAML: %w", err)
+
+	metaPath := filepath.Join(path, "meta.yaml")
+	var meta struct {
+		Entrypoint string `yaml:"entrypoint"`
+		Namespace  string `yaml:"namespace"`
+		Forks      int    `yaml:"forks"`
 	}
-	if err := loadRuleFiles(&wf); err != nil {
+	if err := readYAML(metaPath, &meta); err != nil {
+		return nil, err
+	}
+	wf.Entrypoint = meta.Entrypoint
+	wf.Namespace = meta.Namespace
+	wf.Forks = meta.Forks
+
+	var vars map[string]any
+	if err := readYAML(filepath.Join(path, "vars.yaml"), &vars); err != nil {
+		return nil, err
+	}
+	wf.Vars = vars
+
+	var rules []Rule
+	if err := readYAML(filepath.Join(path, "rules.yaml"), &rules); err != nil {
+		return nil, err
+	}
+	wf.Rules = rules
+
+	var stepTypes map[string]StepType
+	if err := readYAML(filepath.Join(path, "step_types.yaml"), &stepTypes); err != nil {
+		return nil, err
+	}
+	wf.StepTypes = stepTypes
+
+	workflowDir := filepath.Join(path, "workflows")
+	entries, err := os.ReadDir(workflowDir)
+	if err != nil {
+		return nil, fmt.Errorf("reading workflows directory %q: %w", workflowDir, err)
+	}
+	var workflowFiles []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if filepath.Ext(entry.Name()) == ".yaml" {
+			workflowFiles = append(workflowFiles, filepath.Join(workflowDir, entry.Name()))
+		}
+	}
+	sort.Strings(workflowFiles)
+	if len(workflowFiles) == 0 {
+		return nil, fmt.Errorf("directory workflow %q: no workflow files found in workflows/*.yaml", path)
+	}
+
+	for _, workflowPath := range workflowFiles {
+		var workflow Workflow
+		if err := readYAML(workflowPath, &workflow); err != nil {
+			return nil, err
+		}
+		wf.Workflows = append(wf.Workflows, workflow)
+	}
+
+	if err := loadRuleFiles(&wf, path); err != nil {
 		return nil, err
 	}
 	if err := validate(&wf); err != nil {
@@ -29,9 +95,43 @@ func Parse(data []byte) (*WorkflowFile, error) {
 	return &wf, nil
 }
 
+func Parse(data []byte) (*WorkflowFile, error) {
+	var wf WorkflowFile
+	if err := yaml.Unmarshal(data, &wf); err != nil {
+		return nil, fmt.Errorf("parsing workflow YAML: %w", err)
+	}
+	if err := loadRuleFiles(&wf, "."); err != nil {
+		return nil, err
+	}
+	if err := validate(&wf); err != nil {
+		return nil, err
+	}
+	return &wf, nil
+}
+
+func readYAML(path string, out any) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading %q: %w", path, err)
+	}
+	if len(data) == 0 {
+		return nil
+	}
+	if err := yaml.Unmarshal(data, out); err != nil {
+		return fmt.Errorf("parsing %q: %w", path, err)
+	}
+	return nil
+}
+
 func validate(wf *WorkflowFile) error {
 	if wf.Forks <= 0 {
 		wf.Forks = 5
+	}
+	if wf.Vars == nil {
+		wf.Vars = map[string]any{}
+	}
+	if wf.StepTypes == nil {
+		wf.StepTypes = map[string]StepType{}
 	}
 	if len(wf.Workflows) == 0 {
 		return fmt.Errorf("no workflows defined")
@@ -41,6 +141,17 @@ func validate(wf *WorkflowFile) error {
 	}
 	if !hasWorkflow(wf, wf.Entrypoint) {
 		return fmt.Errorf("entrypoint %q not found in workflows", wf.Entrypoint)
+	}
+
+	ruleNames := make(map[string]bool)
+	for _, r := range wf.Rules {
+		if r.Name == "" {
+			return fmt.Errorf("rule missing name")
+		}
+		if ruleNames[r.Name] {
+			return fmt.Errorf("duplicate rule name %q", r.Name)
+		}
+		ruleNames[r.Name] = true
 	}
 
 	names := make(map[string]bool)
@@ -151,11 +262,15 @@ func (wf *WorkflowFile) GetRule(name string) *Rule {
 	return nil
 }
 
-func loadRuleFiles(wf *WorkflowFile) error {
+func loadRuleFiles(wf *WorkflowFile, baseDir string) error {
 	var expanded []Rule
 	for _, r := range wf.Rules {
 		if r.File != "" {
-			data, err := os.ReadFile(r.File)
+			rulePath := r.File
+			if !filepath.IsAbs(rulePath) {
+				rulePath = filepath.Join(baseDir, rulePath)
+			}
+			data, err := os.ReadFile(rulePath)
 			if err != nil {
 				return fmt.Errorf("loading rule file %q: %w", r.File, err)
 			}

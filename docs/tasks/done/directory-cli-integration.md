@@ -17,11 +17,11 @@ No explicit `--project-dir` flag is planned for v1.
 
 ## Acceptance Criteria
 
-- [ ] `markov validate <directory>` validates a directory workflow.
-- [ ] `markov run <directory>` executes a directory workflow.
-- [ ] State store records enough source information for `resume` to reload the directory workflow.
-- [ ] Error messages distinguish missing directory files from YAML parse errors.
-- [ ] Existing `markov run <file.yaml>` and `markov validate <file.yaml>` behavior is unchanged.
+- [x] `markov validate <directory>` validates a directory workflow.
+- [x] `markov run <directory>` executes a directory workflow.
+- [x] State store records enough source information for `resume` to reload the directory workflow.
+- [x] Error messages distinguish missing directory files from YAML parse errors.
+- [x] Existing `markov run <file.yaml>` and `markov validate <file.yaml>` behavior is unchanged.
 
 ## Files Likely Involved
 
@@ -33,9 +33,8 @@ No explicit `--project-dir` flag is planned for v1.
 
 ## Status
 
-Pending
+Done
 
 ## Notes
 
 Resume currently relies on the stored workflow file path. Directory inputs should store the directory path and reload through the same path-detecting loader.
-

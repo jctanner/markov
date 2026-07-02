@@ -12,17 +12,17 @@ markov <command> [flags]
 
 ### markov run
 
-Run a workflow from a YAML file.
+Run a workflow from a YAML file or workflow directory.
 
 ```
-markov run <file.yaml> [flags]
+markov run <file.yaml|directory> [flags]
 ```
 
 **Arguments:**
 
 | Argument | Description |
 |----------|-------------|
-| `file.yaml` | Path to the workflow file to execute. Required. |
+| `file.yaml|directory` | Path to the workflow file or directory to execute. Required. |
 
 **Flags:**
 
@@ -48,6 +48,9 @@ markov run <file.yaml> [flags]
 ```bash
 # Run a workflow file
 markov run pipeline.yaml
+
+# Run a directory workflow
+markov run examples/dir-based-hello-world
 
 # Override variables
 markov run pipeline.yaml --var environment=production --var dry_run=true
@@ -201,17 +204,17 @@ markov list --state-store /data/markov.db
 
 ### markov validate
 
-Validate a workflow file without executing it. Checks all structural and referential integrity rules.
+Validate a workflow file or workflow directory without executing it. Checks all structural and referential integrity rules.
 
 ```
-markov validate <file.yaml>
+markov validate <file.yaml|directory>
 ```
 
 **Arguments:**
 
 | Argument | Description |
 |----------|-------------|
-| `file.yaml` | Path to the workflow file to validate. Required. |
+| `file.yaml|directory` | Path to the workflow file or directory to validate. Required. |
 
 **No additional flags.**
 
@@ -222,6 +225,9 @@ On success, prints `valid` and exits with code 0. On failure, prints the validat
 ```bash
 # Validate a workflow file
 markov validate pipeline.yaml
+
+# Validate a directory workflow
+markov validate examples/dir-based-hello-world
 
 # Use in CI scripts
 if markov validate pipeline.yaml; then

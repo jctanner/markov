@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -30,6 +30,8 @@ The loader will merge those files into the existing parser model:
 
 The existing single-file format remains supported.
 
+Empty `vars.yaml`, `rules.yaml`, and `step_types.yaml` files are allowed. Missing category files are errors.
+
 ## Rationale
 
 Required filenames make the layout predictable for users and tooling. They also avoid ambiguous recursive YAML discovery and keep validation errors easy to explain.
@@ -56,4 +58,3 @@ Negative:
 ## Follow-Up
 
 If users later need more flexibility, Markov can add optional category directories such as `rules/*.yaml` or `step_types/*.yaml` in a later ADR.
-

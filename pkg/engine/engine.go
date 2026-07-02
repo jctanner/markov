@@ -33,6 +33,7 @@ type Engine struct {
 	forks      int
 	Verbose    bool
 	RunID      string
+	SourcePath string
 	callbacks  []callback.Callback
 }
 
@@ -102,7 +103,7 @@ func (e *Engine) Run(ctx context.Context, workflowName string, vars map[string]a
 
 	run := &state.Run{
 		RunID:        runID,
-		WorkflowFile: "",
+		WorkflowFile: e.SourcePath,
 		Entrypoint:   workflowName,
 		Status:       state.RunRunning,
 		VarsJSON:     string(varsJSON),
@@ -733,13 +734,14 @@ func (e *Engine) executeSubWorkflow(ctx context.Context, runID string, workflowN
 	subRunID := fmt.Sprintf("%s-%s", runID, step.Name)
 	varsJSON, _ := json.Marshal(subVars)
 	subRun := &state.Run{
-		RunID:       subRunID,
-		Entrypoint:  step.Workflow,
-		Status:      state.RunRunning,
-		VarsJSON:    string(varsJSON),
-		ParentRunID: runID,
-		ParentStep:  step.Name,
-		StartedAt:   time.Now(),
+		RunID:        subRunID,
+		WorkflowFile: e.SourcePath,
+		Entrypoint:   step.Workflow,
+		Status:       state.RunRunning,
+		VarsJSON:     string(varsJSON),
+		ParentRunID:  runID,
+		ParentStep:   step.Name,
+		StartedAt:    time.Now(),
 	}
 	e.store.CreateRun(ctx, subRun)
 
@@ -899,14 +901,15 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 				subRunID := fmt.Sprintf("%s-%s-%s", runID, step.Name, forEachKey)
 				varsJSON, _ := json.Marshal(subVars)
 				subRun := &state.Run{
-					RunID:       subRunID,
-					Entrypoint:  step.Workflow,
-					Status:      state.RunRunning,
-					VarsJSON:    string(varsJSON),
-					ParentRunID: runID,
-					ParentStep:  step.Name,
-					ForEachKey:  forEachKey,
-					StartedAt:   time.Now(),
+					RunID:        subRunID,
+					WorkflowFile: e.SourcePath,
+					Entrypoint:   step.Workflow,
+					Status:       state.RunRunning,
+					VarsJSON:     string(varsJSON),
+					ParentRunID:  runID,
+					ParentStep:   step.Name,
+					ForEachKey:   forEachKey,
+					StartedAt:    time.Now(),
 				}
 				e.store.CreateRun(ctx, subRun)
 				e.fireEvent(func(cb callback.Callback) error {

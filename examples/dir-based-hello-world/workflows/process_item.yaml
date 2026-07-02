@@ -1,0 +1,8 @@
+name: process_item
+vars:
+  item_name:
+steps:
+  - name: process
+    type: echo_local
+    params:
+      command: "echo 'processing {{ item_name }}'"

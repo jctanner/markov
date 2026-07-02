@@ -14,14 +14,18 @@
 
 ## Pending Tasks
 
-- [Define directory workflow schema](docs/tasks/pending/directory-workflow-schema.md)
-- [Implement directory loader and merge validation](docs/tasks/pending/directory-loader-merge-validation.md)
-- [Wire directory input into CLI commands](docs/tasks/pending/directory-cli-integration.md)
-- [Add directory workflow documentation and examples](docs/tasks/pending/directory-docs-and-examples.md)
+- None
+
+## Completed Tasks
+
+- [Define directory workflow schema](docs/tasks/done/directory-workflow-schema.md)
+- [Implement directory loader and merge validation](docs/tasks/done/directory-loader-merge-validation.md)
+- [Wire directory input into CLI commands](docs/tasks/done/directory-cli-integration.md)
+- [Add directory workflow documentation and examples](docs/tasks/done/directory-docs-and-examples.md)
 
 ## Open Bugs
 
-- None
+- [Direct for_each iterations collide in step state](docs/bugs/open/direct-foreach-step-dedup.md)
 
 ## Decisions
 

@@ -10,13 +10,13 @@ The engine should continue to execute a single resolved workflow model. Director
 
 ## Acceptance Criteria
 
-- [ ] Add a loader path for directory inputs.
-- [ ] Parse `meta.yaml`, `vars.yaml`, `rules.yaml`, `step_types.yaml`, and `workflows/*.yaml`.
-- [ ] Merge parsed content into one `WorkflowFile`.
-- [ ] Reuse existing validation after merge.
-- [ ] Return clear errors for missing files, malformed YAML, and duplicate names.
-- [ ] Preserve support for existing `rules: - file: ...` includes.
-- [ ] Add unit tests covering merge output equivalence with a single-file workflow.
+- [x] Add a loader path for directory inputs.
+- [x] Parse `meta.yaml`, `vars.yaml`, `rules.yaml`, `step_types.yaml`, and `workflows/*.yaml`.
+- [x] Merge parsed content into one `WorkflowFile`.
+- [x] Reuse existing validation after merge.
+- [x] Return clear errors for missing files, malformed YAML, and duplicate names.
+- [x] Preserve support for existing `rules: - file: ...` includes.
+- [x] Add unit tests covering directory merge behavior and single-file compatibility.
 
 ## Files Likely Involved
 
@@ -26,9 +26,8 @@ The engine should continue to execute a single resolved workflow model. Director
 
 ## Status
 
-Pending
+Done
 
 ## Notes
 
 Prefer a small loader abstraction that accepts either a file path or directory path and returns the existing `WorkflowFile` type.
-
