@@ -2,6 +2,8 @@
 
 SQLite database for checkpoint/resume of workflow runs and steps. Uses pure Go SQLite via `modernc.org/sqlite` (no CGO required).
 
+For practical recovery steps and operational caveats, see [Resuming Workflows](../guides/resuming-workflows.md).
+
 ## Default location
 
 | Environment | Path | Detection |

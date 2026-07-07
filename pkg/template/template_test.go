@@ -108,3 +108,18 @@ func TestFromJSON_Number(t *testing.T) {
 		t.Errorf("result = %q, want '42' or '42.000000'", result)
 	}
 }
+
+func TestTrimFilter(t *testing.T) {
+	eng := New()
+	ctx := map[string]any{
+		"stdout": "  RHAISTRAT-1\n",
+	}
+
+	result, err := eng.Render("{{ stdout | trim }}", ctx)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if result != "RHAISTRAT-1" {
+		t.Errorf("result = %q, want RHAISTRAT-1", result)
+	}
+}

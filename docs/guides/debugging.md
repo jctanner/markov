@@ -57,6 +57,14 @@ deploy                         failed       1.5s
   error: shell_exec: exit status 1
 ```
 
+After fixing the underlying problem, resume the failed run:
+
+```bash
+markov resume <run-id>
+```
+
+For detailed resume behavior and caveats, see [Resuming Workflows](resuming-workflows.md).
+
 ## Listing All Runs
 
 See all runs in the state store:
@@ -167,5 +175,6 @@ sqlite3 markov-state.db "SELECT run_id, for_each_key, status FROM runs WHERE par
 
 - [CLI Reference](../reference/cli.md) — all commands and flags
 - [State Store Reference](../reference/state-store.md) — database schema and resume behavior
+- [Resuming Workflows](resuming-workflows.md) — practical checkpoint/resume recovery guide
 - [Callbacks Reference](../reference/callbacks.md) — event types for monitoring
 {% endraw %}

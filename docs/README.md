@@ -41,6 +41,7 @@ Practical how-to guides with complete examples:
 
 - [Writing Workflows](guides/writing-workflows.md) — anatomy of a workflow, variables, register, conditions, custom types
 - [Fan-Out Patterns](guides/fan-out-patterns.md) — for_each concurrency, sub-workflow fan-outs, stable keys
+- [Resuming Workflows](guides/resuming-workflows.md) — checkpoint/resume workflow operations, caveats, and troubleshooting
 - [Looping with Gates](guides/looping-with-gates.md) — recursive workflows, retry loops, gate-controlled iteration
 - [Conditional Logic](guides/conditional-logic.md) — when vs gates vs assert, decision routing patterns
 - [Running in Kubernetes](guides/k8s-deployment.md) — in-cluster auth, RBAC, state persistence, callbacks

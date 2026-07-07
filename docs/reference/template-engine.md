@@ -44,7 +44,22 @@ slug: "{{ title | lower | cut:' ' }}"
 | `{{ value \| filter:arg }}` | Apply a filter with an argument |
 | `{{ value \| filter1 \| filter2 }}` | Chain multiple filters left to right |
 
-## Custom Filter: fromjson
+## Markov Filters
+
+Markov registers additional filters on top of Pongo2's built-in set.
+
+### `trim`
+
+Removes leading and trailing whitespace from a value.
+
+```yaml
+- name: set_issue_key
+  type: set_fact
+  vars:
+    issue_key: "{{ command_result.stdout | trim }}"
+```
+
+### `fromjson`
 
 Defined in `pkg/template/template.go`. Parses a JSON string into a native Go value (map, list, number, bool, etc.).
 

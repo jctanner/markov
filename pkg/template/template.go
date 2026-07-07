@@ -10,6 +10,7 @@ import (
 
 func init() {
 	pongo2.RegisterFilter("fromjson", filterFromJSON)
+	pongo2.RegisterFilter("trim", filterTrim)
 }
 
 func filterFromJSON(in *pongo2.Value, param *pongo2.Value) (*pongo2.Value, *pongo2.Error) {
@@ -22,6 +23,10 @@ func filterFromJSON(in *pongo2.Value, param *pongo2.Value) (*pongo2.Value, *pong
 		}
 	}
 	return pongo2.AsValue(parsed), nil
+}
+
+func filterTrim(in *pongo2.Value, param *pongo2.Value) (*pongo2.Value, *pongo2.Error) {
+	return pongo2.AsValue(strings.TrimSpace(in.String())), nil
 }
 
 type Engine struct{}

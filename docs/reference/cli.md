@@ -81,6 +81,8 @@ markov run pipeline.yaml --run-id my-pipeline-run-001
 
 Resume a previously failed workflow run from the point of failure. The workflow file path is stored in the state database, so it does not need to be provided again.
 
+For operational guidance, prerequisites, and caveats, see [Resuming Workflows](../guides/resuming-workflows.md).
+
 ```
 markov resume <run_id> [flags]
 ```

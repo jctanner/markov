@@ -72,6 +72,14 @@ markov status <run-id> --steps
 
 This shows the status and duration of each step.
 
+If a run fails, fix the cause and resume it from the same state store:
+
+```bash
+markov resume <run-id>
+```
+
+See [Resuming Workflows](guides/resuming-workflows.md) for the full recovery workflow and caveats.
+
 ## Override Variables
 
 ```bash
