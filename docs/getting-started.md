@@ -129,6 +129,8 @@ examples/dir-based-hello-world/
     main.yaml
 ```
 
+Custom step types can also live in `step_types/*.yaml` files when you want to split them by category.
+
 Validate and run it:
 
 ```bash

@@ -53,8 +53,8 @@ func ParseDir(path string) (*WorkflowFile, error) {
 	}
 	wf.Rules = rules
 
-	var stepTypes map[string]StepType
-	if err := readYAML(filepath.Join(path, "step_types.yaml"), &stepTypes); err != nil {
+	stepTypes, err := readStepTypes(path)
+	if err != nil {
 		return nil, err
 	}
 	wf.StepTypes = stepTypes
@@ -119,6 +119,75 @@ func readYAML(path string, out any) error {
 	}
 	if err := yaml.Unmarshal(data, out); err != nil {
 		return fmt.Errorf("parsing %q: %w", path, err)
+	}
+	return nil
+}
+
+func readStepTypes(path string) (map[string]StepType, error) {
+	stepTypes := map[string]StepType{}
+	filePath := filepath.Join(path, "step_types.yaml")
+	dirPath := filepath.Join(path, "step_types")
+
+	fileInfo, fileErr := os.Stat(filePath)
+	dirInfo, dirErr := os.Stat(dirPath)
+
+	if fileErr != nil && !os.IsNotExist(fileErr) {
+		return nil, fmt.Errorf("reading %q: %w", filePath, fileErr)
+	}
+	if dirErr != nil && !os.IsNotExist(dirErr) {
+		return nil, fmt.Errorf("reading %q: %w", dirPath, dirErr)
+	}
+	if os.IsNotExist(fileErr) && os.IsNotExist(dirErr) {
+		return nil, fmt.Errorf("reading %q or %q: step types category not found", filePath, dirPath)
+	}
+
+	if fileErr == nil {
+		if fileInfo.IsDir() {
+			return nil, fmt.Errorf("reading %q: expected file, got directory", filePath)
+		}
+		if err := mergeStepTypesFile(filePath, stepTypes); err != nil {
+			return nil, err
+		}
+	}
+
+	if dirErr == nil {
+		if !dirInfo.IsDir() {
+			return nil, fmt.Errorf("reading %q: expected directory, got file", dirPath)
+		}
+		entries, err := os.ReadDir(dirPath)
+		if err != nil {
+			return nil, fmt.Errorf("reading step_types directory %q: %w", dirPath, err)
+		}
+		var stepTypeFiles []string
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			if filepath.Ext(entry.Name()) == ".yaml" {
+				stepTypeFiles = append(stepTypeFiles, filepath.Join(dirPath, entry.Name()))
+			}
+		}
+		sort.Strings(stepTypeFiles)
+		for _, stepTypePath := range stepTypeFiles {
+			if err := mergeStepTypesFile(stepTypePath, stepTypes); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return stepTypes, nil
+}
+
+func mergeStepTypesFile(path string, stepTypes map[string]StepType) error {
+	var current map[string]StepType
+	if err := readYAML(path, &current); err != nil {
+		return err
+	}
+	for name, stepType := range current {
+		if _, ok := stepTypes[name]; ok {
+			return fmt.Errorf("duplicate step type %q in %q", name, path)
+		}
+		stepTypes[name] = stepType
 	}
 	return nil
 }
@@ -311,6 +380,38 @@ func (wf *WorkflowFile) ResolveStepType(step *Step) (base string, mergedParams m
 	for k, v := range step.Params {
 		merged[k] = v
 	}
+	mergeHeaderParams(merged, st.Job, st.Defaults, st.Params, step.Params)
 
 	return st.Base, merged
+}
+
+func mergeHeaderParams(merged map[string]any, layers ...map[string]any) {
+	headers := map[string]any{}
+	for _, layer := range layers {
+		layerHeaders, ok := mapAny(layer["headers"])
+		if !ok {
+			continue
+		}
+		for key, value := range layerHeaders {
+			headers[key] = value
+		}
+	}
+	if len(headers) > 0 {
+		merged["headers"] = headers
+	}
+}
+
+func mapAny(raw any) (map[string]any, bool) {
+	switch v := raw.(type) {
+	case map[string]any:
+		return v, true
+	case map[string]string:
+		out := make(map[string]any, len(v))
+		for key, value := range v {
+			out[key] = value
+		}
+		return out, true
+	default:
+		return nil, false
+	}
 }

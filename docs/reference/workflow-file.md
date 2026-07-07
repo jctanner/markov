@@ -41,6 +41,21 @@ pipeline/
     deploy.yaml
 ```
 
+Step types may also be split across a directory:
+
+```text
+pipeline/
+  meta.yaml
+  vars.yaml
+  rules.yaml
+  step_types/
+    shell.yaml
+    http.yaml
+  workflows/
+    main.yaml
+    deploy.yaml
+```
+
 The files map directly to the single-file schema:
 
 | File | YAML Shape | Description |
@@ -49,6 +64,7 @@ The files map directly to the single-file schema:
 | `vars.yaml` | map | Top-level variables, without a wrapping `vars:` key |
 | `rules.yaml` | list | Rule definitions, without a wrapping `rules:` key |
 | `step_types.yaml` | map | Step type definitions, without a wrapping `step_types:` key |
+| `step_types/*.yaml` | map | Additional step type definition maps, merged by filename |
 | `workflows/*.yaml` | map | One workflow object per file, without a wrapping `workflows:` key |
 
 Minimal example:
@@ -85,7 +101,7 @@ steps:
       command: "echo '{{ greeting }}'"
 ```
 
-Validation runs after the directory is merged into a single in-memory workflow file. Duplicate workflow names and duplicate rule names are validation errors. Missing required category files are errors; empty category files are allowed for `vars.yaml`, `rules.yaml`, and `step_types.yaml`.
+Validation runs after the directory is merged into a single in-memory workflow file. Duplicate workflow names, duplicate rule names, and duplicate step type names across step type files are validation errors. Missing required category files are errors; for step types, either `step_types.yaml` or a `step_types/` directory must exist. Empty category files are allowed for `vars.yaml`, `rules.yaml`, and `step_types.yaml`; an empty `step_types/` directory is also allowed.
 
 External rule includes still use the `file` field. In directory mode, relative rule include paths resolve from the workflow directory root:
 

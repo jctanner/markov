@@ -139,6 +139,68 @@ echo_local:
 	}
 }
 
+func TestParseDirLoadsStepTypesDirectory(t *testing.T) {
+	dir := makeDirectoryWorkflow(t)
+	if err := os.Remove(filepath.Join(dir, "step_types.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	stepTypesDir := filepath.Join(dir, "step_types")
+	if err := os.MkdirAll(stepTypesDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(stepTypesDir, "shell.yaml"), `
+echo_local:
+  base: shell_exec
+`)
+	writeFile(t, filepath.Join(stepTypesDir, "http.yaml"), `
+get_json:
+  base: http_request
+  defaults:
+    method: GET
+`)
+
+	wf, err := ParseFile(dir)
+	if err != nil {
+		t.Fatalf("ParseFile(directory) error = %v", err)
+	}
+	if _, ok := wf.StepTypes["echo_local"]; !ok {
+		t.Fatalf("step type echo_local missing")
+	}
+	if _, ok := wf.StepTypes["get_json"]; !ok {
+		t.Fatalf("step type get_json missing")
+	}
+}
+
+func TestParseDirRejectsDuplicateStepTypesAcrossDirectoryFiles(t *testing.T) {
+	dir := makeDirectoryWorkflow(t)
+	if err := os.Remove(filepath.Join(dir, "step_types.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	stepTypesDir := filepath.Join(dir, "step_types")
+	if err := os.MkdirAll(stepTypesDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(stepTypesDir, "a.yaml"), `
+echo_local:
+  base: shell_exec
+`)
+	writeFile(t, filepath.Join(stepTypesDir, "b.yaml"), `
+echo_local:
+  base: http_request
+`)
+
+	_, err := ParseFile(dir)
+	if err == nil {
+		t.Fatalf("ParseFile(directory) error = nil, want duplicate step type error")
+	}
+	if !strings.Contains(err.Error(), `duplicate step type "echo_local"`) {
+		t.Fatalf("error = %q, want duplicate step type error", err)
+	}
+	if !strings.Contains(err.Error(), "step_types") {
+		t.Fatalf("error = %q, want step_types path", err)
+	}
+}
+
 func TestParseDirAllowsEmptyCategoryFiles(t *testing.T) {
 	dir := makeDirectoryWorkflow(t)
 	writeFile(t, filepath.Join(dir, "vars.yaml"), "")
@@ -198,6 +260,70 @@ steps:
 	}
 	if len(wf.Rules) != 1 || wf.Rules[0].Name != "from_external_file" {
 		t.Fatalf("Rules = %#v, want external rule", wf.Rules)
+	}
+}
+
+func TestResolveStepTypeMergesHeaders(t *testing.T) {
+	wf := &WorkflowFile{
+		StepTypes: map[string]StepType{
+			"github_api": {
+				Base: "http_request",
+				Defaults: map[string]any{
+					"headers": map[string]any{
+						"User-Agent": "markov",
+					},
+				},
+				Params: map[string]any{
+					"base_url": "https://github.example/api/v3",
+					"basic_auth": map[string]any{
+						"username": "api-user",
+						"password": "api-token",
+					},
+					"headers": map[string]any{
+						"Accept":        "application/vnd.github+json",
+						"Authorization": "token default",
+					},
+				},
+			},
+		},
+	}
+	step := &Step{
+		Type: "github_api",
+		Params: map[string]any{
+			"path": "/repos/example/repo",
+			"headers": map[string]any{
+				"Authorization": "token step",
+				"X-Request-ID":  "abc123",
+			},
+		},
+	}
+
+	base, params := wf.ResolveStepType(step)
+	if base != "http_request" {
+		t.Fatalf("base = %q, want http_request", base)
+	}
+	headers, ok := params["headers"].(map[string]any)
+	if !ok {
+		t.Fatalf("headers = %#v, want map[string]any", params["headers"])
+	}
+	if headers["Accept"] != "application/vnd.github+json" {
+		t.Fatalf("Accept = %v, want default header", headers["Accept"])
+	}
+	if headers["User-Agent"] != "markov" {
+		t.Fatalf("User-Agent = %v, want default header", headers["User-Agent"])
+	}
+	if headers["Authorization"] != "token step" {
+		t.Fatalf("Authorization = %v, want step override", headers["Authorization"])
+	}
+	if headers["X-Request-ID"] != "abc123" {
+		t.Fatalf("X-Request-ID = %v, want step header", headers["X-Request-ID"])
+	}
+	basicAuth, ok := params["basic_auth"].(map[string]any)
+	if !ok {
+		t.Fatalf("basic_auth = %#v, want map[string]any", params["basic_auth"])
+	}
+	if basicAuth["username"] != "api-user" || basicAuth["password"] != "api-token" {
+		t.Fatalf("basic_auth = %#v, want step type values", basicAuth)
 	}
 }
 

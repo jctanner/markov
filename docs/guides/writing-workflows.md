@@ -52,6 +52,8 @@ my-pipeline/
     per-item.yaml
 ```
 
+For larger custom type libraries, `step_types.yaml` can be replaced by or combined with a `step_types/` directory containing one or more YAML maps.
+
 The category files contain their category directly:
 
 ```yaml

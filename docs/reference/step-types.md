@@ -251,8 +251,11 @@ Makes HTTP requests with automatic JSON body encoding and response parsing.
 | `base_url` | string | -- | Base URL, concatenated with `path` to form the full URL |
 | `path` | string | -- | Path appended to `base_url` |
 | `body` | any | -- | Request body, JSON-encoded automatically |
+| `headers` | map[string]string | `{}` | Custom HTTP headers to add to the request |
+| `basic_auth` | map | -- | HTTP Basic Auth credentials with `username` and `password` fields |
+| `ignore_status` | bool or list[int] | -- | Treat matching HTTP error status codes as success. `true` ignores all `>= 400` responses. |
 
-When a `body` is provided, the `Content-Type` header is set to `application/json`.
+When a `body` is provided, the `Content-Type` header is set to `application/json`. A custom `Content-Type` value in `headers` overrides that default. If both `basic_auth` and a custom `Authorization` header are provided, `basic_auth` takes precedence.
 
 Either `url` or `base_url` must be specified. When both `base_url` and `path` are given, they are concatenated directly (no slash is inserted).
 
@@ -267,7 +270,7 @@ Either `url` or `base_url` must be specified. When both `base_url` and `path` ar
 
 - Neither `url` nor `base_url` is provided.
 - The HTTP request fails at the transport level (DNS, connection refused, etc.).
-- The response status code is >= 400. The step fails, but output variables (including the response body) are still populated.
+- The response status code is >= 400 and is not allowed by `ignore_status`. The step fails, but output variables (including the response body) are still populated.
 
 ### Examples
 
@@ -301,6 +304,48 @@ POST request with JSON body:
       url: "https://hooks.example.com/markov"
       events: ["job.completed", "job.failed"]
   register: webhook
+```
+
+Authenticated request with custom headers:
+
+```yaml
+- name: create_issue
+  type: http_request
+  params:
+    base_url: "https://issues.example.com/rest/api/2"
+    path: "/issue"
+    method: POST
+    basic_auth:
+      username: "{{ jira_user }}"
+      password: "{{ jira_password }}"
+    headers:
+      Accept: "application/json"
+    body:
+      fields:
+        project:
+          key: PIPE
+        summary: "Pipeline-created issue"
+        issuetype:
+          name: Task
+  register: issue
+```
+
+Token auth and tolerated status codes:
+
+```yaml
+- name: ensure_repo
+  type: http_request
+  params:
+    base_url: "https://github.example.com/api/v3"
+    path: "/orgs/{{ org }}/repos"
+    method: POST
+    headers:
+      Authorization: "token {{ github_token }}"
+      Accept: "application/vnd.github+json"
+    ignore_status: [422]
+    body:
+      name: "{{ repo_name }}"
+  register: repo_create
 ```
 
 ---

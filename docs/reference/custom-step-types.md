@@ -93,7 +93,7 @@ steps:
 
 ### API Client: jira_api
 
-A wrapper for `http_request` that pre-configures the base URL:
+A wrapper for `http_request` that pre-configures the base URL and Basic Auth:
 
 ```yaml
 step_types:
@@ -102,6 +102,11 @@ step_types:
     description: "Call the Jira REST API"
     params:
       base_url: "{{ jira_server }}/rest/api/2"
+      basic_auth:
+        username: "{{ jira_user }}"
+        password: "{{ jira_password }}"
+      headers:
+        Accept: "application/json"
 ```
 
 Usage:
@@ -109,6 +114,9 @@ Usage:
 ```yaml
 vars:
   jira_server: "https://issues.redhat.com"
+  jira_user: admin
+  jira_password: admin
+  request_id: demo-001
 
 steps:
   - name: fetch_issues
@@ -116,6 +124,8 @@ steps:
     params:
       path: "/search?jql=project=MYPROJECT&maxResults=100"
       method: GET
+      headers:
+        X-Request-ID: "{{ request_id }}"
     register: issue_list
 
   - name: get_issue
@@ -124,6 +134,8 @@ steps:
       path: "/issue/{{ issue_key }}"
     register: issue_detail
 ```
+
+When a step type and a step both define `headers`, the maps are merged. Step-level values override headers with the same name while preserving the other headers from the step type.
 
 ### Production: agent_skill
 
