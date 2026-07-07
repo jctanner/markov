@@ -33,7 +33,7 @@ markov run <file.yaml|directory> [flags]
 | `--forks N` | int | `0` (use file default) | Override the global `forks` concurrency limit. A value of 0 defers to the workflow file setting (which defaults to 5). |
 | `--namespace ns` | string | -- | Override the Kubernetes namespace for `k8s_job` steps. |
 | `--kubeconfig path` | string | -- | Path to a kubeconfig file for Kubernetes client configuration. |
-| `--state-store path` | string | `./markov-state.db` or `/tmp/markov-state.db` | Path to the SQLite state file. Defaults to `/tmp/markov-state.db` when running in-cluster (ServiceAccount token detected), otherwise `./markov-state.db`. |
+| `--state-store path-or-dsn` | string | `MARKOV_STATE_STORE`, `/tmp/markov-state.db`, or `./markov-state.db` | SQLite path or Postgres DSN. Defaults to `MARKOV_STATE_STORE` when set, then `/tmp/markov-state.db` in-cluster, otherwise `./markov-state.db`. |
 | `--verbose` | bool | `false` | Show detailed execution output including parameter values and template rendering results. |
 | `--debug` | bool | `false` | Show debug logging for flag parsing, callback setup, and K8s client initialization. Implies `--verbose`. |
 | `--run-id id` | string | -- | Use a specific run ID instead of generating a UUID. Useful for deterministic run tracking. |
@@ -97,7 +97,7 @@ markov resume <run_id> [flags]
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--state-store path` | string | `./markov-state.db` or `/tmp/markov-state.db` | Path to the SQLite state file. |
+| `--state-store path-or-dsn` | string | `MARKOV_STATE_STORE`, `/tmp/markov-state.db`, or `./markov-state.db` | SQLite path or Postgres DSN. |
 
 **Examples:**
 
@@ -129,7 +129,7 @@ markov status <run_id> [flags]
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--state-store path` | string | `./markov-state.db` or `/tmp/markov-state.db` | Path to the SQLite state file. |
+| `--state-store path-or-dsn` | string | `MARKOV_STATE_STORE`, `/tmp/markov-state.db`, or `./markov-state.db` | SQLite path or Postgres DSN. |
 | `--steps` | bool | `false` | Show a per-step status table with individual step names, statuses, durations, and errors. |
 
 **Output:**
@@ -183,7 +183,7 @@ markov list [flags]
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--state-store path` | string | `./markov-state.db` or `/tmp/markov-state.db` | Path to the SQLite state file. |
+| `--state-store path-or-dsn` | string | `MARKOV_STATE_STORE`, `/tmp/markov-state.db`, or `./markov-state.db` | SQLite path or Postgres DSN. |
 
 **Output:**
 
@@ -263,7 +263,7 @@ markov diagram <run_id> [flags]
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--state-store path` | string | `./markov-state.db` or `/tmp/markov-state.db` | Path to the SQLite state file. |
+| `--state-store path-or-dsn` | string | `MARKOV_STATE_STORE`, `/tmp/markov-state.db`, or `./markov-state.db` | SQLite path or Postgres DSN. |
 
 **Examples:**
 
@@ -328,14 +328,16 @@ The Kubernetes namespace for `k8s_job` steps is resolved in the following order.
 
 ## State Store
 
-Markov persists run state in a SQLite database. The default path depends on the runtime environment:
+Markov persists run state in SQLite by default. The default path depends on the runtime environment:
 
-| Environment | Default Path | Detection |
-|-------------|-------------|-----------|
-| In-cluster (Kubernetes pod) | `/tmp/markov-state.db` | ServiceAccount token exists at `/var/run/secrets/kubernetes.io/serviceaccount/token` |
-| Local machine | `./markov-state.db` | ServiceAccount token not found |
+| Priority | Source | Description |
+|----------|--------|-------------|
+| 1 | `--state-store path-or-dsn` | Explicit CLI flag on stateful commands. |
+| 2 | `MARKOV_STATE_STORE` | Environment variable containing a SQLite path or Postgres DSN. |
+| 3 | In-cluster default | `/tmp/markov-state.db` when a ServiceAccount token exists at `/var/run/secrets/kubernetes.io/serviceaccount/token`. |
+| 4 | Local default | `./markov-state.db`. |
 
-Override with `--state-store` on any command that uses state (`run`, `resume`, `status`, `list`, `diagram`).
+Override with `--state-store` on any command that uses state (`run`, `resume`, `status`, `list`, `diagram`). A filesystem path selects SQLite. A `postgres://` or `postgresql://` DSN selects Postgres.
 
 ---
 

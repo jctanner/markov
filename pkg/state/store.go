@@ -2,6 +2,8 @@ package state
 
 import (
 	"context"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -49,6 +51,8 @@ type StepResult struct {
 }
 
 type Store interface {
+	Close() error
+
 	CreateRun(ctx context.Context, run *Run) error
 	UpdateRun(ctx context.Context, run *Run) error
 	GetRun(ctx context.Context, runID string) (*Run, error)
@@ -59,4 +63,35 @@ type Store interface {
 	SaveStep(ctx context.Context, step *StepResult) error
 	GetSteps(ctx context.Context, runID string) ([]*StepResult, error)
 	GetStep(ctx context.Context, runID, workflowName, stepName string) (*StepResult, error)
+}
+
+func OpenStore(stateStore string) (Store, error) {
+	if isPostgresDSN(stateStore) {
+		return NewPostgresStore(stateStore)
+	}
+	return NewSQLiteStore(stateStore)
+}
+
+func isPostgresDSN(stateStore string) bool {
+	return strings.HasPrefix(stateStore, "postgres://") || strings.HasPrefix(stateStore, "postgresql://")
+}
+
+func RedactStoreLocation(stateStore string) string {
+	if !isPostgresDSN(stateStore) {
+		return stateStore
+	}
+	u, err := url.Parse(stateStore)
+	if err != nil {
+		return "postgres://<redacted>"
+	}
+	redacted := u.Scheme + "://"
+	if u.User != nil {
+		redacted += "<redacted>@"
+	}
+	redacted += u.Host
+	redacted += u.Path
+	if u.RawQuery != "" {
+		redacted += "?<redacted>"
+	}
+	return redacted
 }

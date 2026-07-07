@@ -86,7 +86,23 @@ kubectl create configmap markov-pipeline --from-file=pipeline.yaml
 
 By default, markov uses `/tmp/markov-state.db` when running in-cluster. This is ephemeral and lost when the pod terminates.
 
-For durable state (to enable `markov resume` across pod restarts), mount a PersistentVolumeClaim:
+For orchestrated or concurrent production runs, prefer Postgres and pass the DSN through a Kubernetes Secret:
+
+```yaml
+env:
+  - name: MARKOV_STATE_STORE
+    valueFrom:
+      secretKeyRef:
+        name: markov-state
+        key: dsn
+containers:
+  - name: markov
+    command: ["markov", "run", "/config/pipeline.yaml"]
+```
+
+Use a dedicated database, schema, or user for Markov checkpoint tables, and make sure the workflow source path is mounted at the same path for resume jobs.
+
+For durable SQLite state (to enable `markov resume` across pod restarts), mount a PersistentVolumeClaim:
 
 ```yaml
 containers:

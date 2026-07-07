@@ -37,6 +37,7 @@ var (
 
 	saTokenPath     = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 	saNamespacePath = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+	stateStoreEnv   = "MARKOV_STATE_STORE"
 )
 
 func debugLog(format string, args ...any) {
@@ -46,10 +47,20 @@ func debugLog(format string, args ...any) {
 }
 
 func defaultStateStorePath() string {
+	if env := strings.TrimSpace(os.Getenv(stateStoreEnv)); env != "" {
+		return env
+	}
 	if _, err := os.Stat(saTokenPath); err == nil {
 		return "/tmp/markov-state.db"
 	}
 	return "./markov-state.db"
+}
+
+func addStateStoreFlag(cmd *cobra.Command, defaultValue string) {
+	cmd.Flags().StringVar(&flagStateStore, "state-store", defaultValue, "SQLite path or Postgres DSN")
+	if flag := cmd.Flags().Lookup("state-store"); flag != nil {
+		flag.DefValue = state.RedactStoreLocation(defaultValue)
+	}
 }
 
 func main() {
@@ -69,7 +80,7 @@ func main() {
 	runCmd.Flags().StringArrayVar(&flagVars, "var", nil, "Override vars (key=value, repeatable)")
 	runCmd.Flags().StringVar(&flagWorkflow, "workflow", "", "Run a specific workflow instead of entrypoint")
 	runCmd.Flags().IntVar(&flagForks, "forks", 0, "Override global forks")
-	runCmd.Flags().StringVar(&flagStateStore, "state-store", stateStorePath, "SQLite state store path")
+	addStateStoreFlag(runCmd, stateStorePath)
 	runCmd.Flags().StringVar(&flagNamespace, "namespace", "", "Override K8s namespace")
 	runCmd.Flags().StringVar(&flagKubeconfig, "kubeconfig", "", "K8s config path")
 	runCmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Show detailed execution output")
@@ -87,7 +98,7 @@ func main() {
 		Args:  cobra.ExactArgs(1),
 		RunE:  resumeWorkflow,
 	}
-	resumeCmd.Flags().StringVar(&flagStateStore, "state-store", stateStorePath, "SQLite state store path")
+	addStateStoreFlag(resumeCmd, stateStorePath)
 
 	statusCmd := &cobra.Command{
 		Use:   "status <run_id>",
@@ -95,7 +106,7 @@ func main() {
 		Args:  cobra.ExactArgs(1),
 		RunE:  showStatus,
 	}
-	statusCmd.Flags().StringVar(&flagStateStore, "state-store", stateStorePath, "SQLite state store path")
+	addStateStoreFlag(statusCmd, stateStorePath)
 	statusCmd.Flags().BoolVar(&flagSteps, "steps", false, "Show individual step statuses")
 
 	listCmd := &cobra.Command{
@@ -104,7 +115,7 @@ func main() {
 		Args:  cobra.NoArgs,
 		RunE:  listRuns,
 	}
-	listCmd.Flags().StringVar(&flagStateStore, "state-store", stateStorePath, "SQLite state store path")
+	addStateStoreFlag(listCmd, stateStorePath)
 
 	validateCmd := &cobra.Command{
 		Use:   "validate <file.yaml|directory>",
@@ -119,7 +130,7 @@ func main() {
 		Args:  cobra.ExactArgs(1),
 		RunE:  showDiagram,
 	}
-	diagramCmd.Flags().StringVar(&flagStateStore, "state-store", stateStorePath, "SQLite state store path")
+	addStateStoreFlag(diagramCmd, stateStorePath)
 
 	root.AddCommand(runCmd, resumeCmd, statusCmd, listCmd, validateCmd, diagramCmd)
 
@@ -134,7 +145,7 @@ func runWorkflow(cmd *cobra.Command, args []string) error {
 	}
 
 	debugLog("flags: --run-id=%q --workflow=%q --namespace=%q --kubeconfig=%q --state-store=%q --forks=%d --verbose=%v",
-		flagRunID, flagWorkflow, flagNamespace, flagKubeconfig, flagStateStore, flagForks, flagVerbose)
+		flagRunID, flagWorkflow, flagNamespace, flagKubeconfig, state.RedactStoreLocation(flagStateStore), flagForks, flagVerbose)
 	debugLog("flags: --callback=%v --callback-header=%v --callback-tls-insecure=%v --callback-buffer-size=%d",
 		flagCallbacks, flagCallbackHeaders, flagCallbackTLSInsecure, flagCallbackBufferSize)
 	debugLog("flags: --var=%v", flagVars)
@@ -153,8 +164,8 @@ func runWorkflow(cmd *cobra.Command, args []string) error {
 
 	vars := parseVarFlags(flagVars)
 
-	debugLog("state store: %s", flagStateStore)
-	store, err := state.NewSQLiteStore(flagStateStore)
+	debugLog("state store: %s", state.RedactStoreLocation(flagStateStore))
+	store, err := state.OpenStore(flagStateStore)
 	if err != nil {
 		return err
 	}
@@ -199,7 +210,7 @@ func runWorkflow(cmd *cobra.Command, args []string) error {
 }
 
 func resumeWorkflow(cmd *cobra.Command, args []string) error {
-	store, err := state.NewSQLiteStore(flagStateStore)
+	store, err := state.OpenStore(flagStateStore)
 	if err != nil {
 		return err
 	}
@@ -227,7 +238,7 @@ func resumeWorkflow(cmd *cobra.Command, args []string) error {
 }
 
 func showStatus(cmd *cobra.Command, args []string) error {
-	store, err := state.NewSQLiteStore(flagStateStore)
+	store, err := state.OpenStore(flagStateStore)
 	if err != nil {
 		return err
 	}
@@ -271,7 +282,7 @@ func showStatus(cmd *cobra.Command, args []string) error {
 }
 
 func listRuns(cmd *cobra.Command, args []string) error {
-	store, err := state.NewSQLiteStore(flagStateStore)
+	store, err := state.OpenStore(flagStateStore)
 	if err != nil {
 		return err
 	}
@@ -304,7 +315,7 @@ func listRuns(cmd *cobra.Command, args []string) error {
 }
 
 func showDiagram(cmd *cobra.Command, args []string) error {
-	store, err := state.NewSQLiteStore(flagStateStore)
+	store, err := state.OpenStore(flagStateStore)
 	if err != nil {
 		return err
 	}

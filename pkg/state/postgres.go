@@ -4,28 +4,31 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-type SQLiteStore struct {
+type PostgresStore struct {
 	db *sql.DB
 }
 
-func NewSQLiteStore(path string) (*SQLiteStore, error) {
-	db, err := sql.Open("sqlite", path)
+func NewPostgresStore(dsn string) (*PostgresStore, error) {
+	db, err := sql.Open("pgx", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("opening sqlite db: %w", err)
+		return nil, fmt.Errorf("opening postgres db: %w", err)
 	}
-	if err := migrate(db); err != nil {
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("connecting postgres db: %w", err)
+	}
+	if err := migratePostgres(db); err != nil {
 		db.Close()
 		return nil, err
 	}
-	return &SQLiteStore{db: db}, nil
+	return &PostgresStore{db: db}, nil
 }
 
-func migrate(db *sql.DB) error {
+func migratePostgres(db *sql.DB) error {
 	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS runs (
 			run_id          TEXT PRIMARY KEY,
@@ -36,8 +39,8 @@ func migrate(db *sql.DB) error {
 			parent_run_id   TEXT,
 			parent_step     TEXT,
 			for_each_key    TEXT,
-			started_at      TIMESTAMP NOT NULL,
-			completed_at    TIMESTAMP
+			started_at      TIMESTAMPTZ NOT NULL,
+			completed_at    TIMESTAMPTZ
 		);
 
 		CREATE TABLE IF NOT EXISTS steps (
@@ -48,25 +51,25 @@ func migrate(db *sql.DB) error {
 			output_json     TEXT,
 			artifacts_json  TEXT,
 			error           TEXT,
-			started_at      TIMESTAMP,
-			completed_at    TIMESTAMP,
+			started_at      TIMESTAMPTZ,
+			completed_at    TIMESTAMPTZ,
 			PRIMARY KEY (run_id, workflow_name, step_name)
 		);
 	`)
 	if err != nil {
-		return fmt.Errorf("migrating schema: %w", err)
+		return fmt.Errorf("migrating postgres schema: %w", err)
 	}
 	return nil
 }
 
-func (s *SQLiteStore) Close() error {
+func (s *PostgresStore) Close() error {
 	return s.db.Close()
 }
 
-func (s *SQLiteStore) CreateRun(ctx context.Context, run *Run) error {
+func (s *PostgresStore) CreateRun(ctx context.Context, run *Run) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO runs (run_id, workflow_file, entrypoint, status, vars_json, parent_run_id, parent_step, for_each_key, started_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 		run.RunID, run.WorkflowFile, run.Entrypoint, run.Status, run.VarsJSON,
 		nullStr(run.ParentRunID), nullStr(run.ParentStep), nullStr(run.ForEachKey), run.StartedAt)
 	if err != nil {
@@ -75,9 +78,9 @@ func (s *SQLiteStore) CreateRun(ctx context.Context, run *Run) error {
 	return nil
 }
 
-func (s *SQLiteStore) UpdateRun(ctx context.Context, run *Run) error {
+func (s *PostgresStore) UpdateRun(ctx context.Context, run *Run) error {
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE runs SET status = ?, completed_at = ? WHERE run_id = ?`,
+		UPDATE runs SET status = $1, completed_at = $2 WHERE run_id = $3`,
 		run.Status, run.CompletedAt, run.RunID)
 	if err != nil {
 		return fmt.Errorf("updating run: %w", err)
@@ -85,11 +88,11 @@ func (s *SQLiteStore) UpdateRun(ctx context.Context, run *Run) error {
 	return nil
 }
 
-func (s *SQLiteStore) GetRun(ctx context.Context, runID string) (*Run, error) {
+func (s *PostgresStore) GetRun(ctx context.Context, runID string) (*Run, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT run_id, workflow_file, entrypoint, status, vars_json,
 		       parent_run_id, parent_step, for_each_key, started_at, completed_at
-		FROM runs WHERE run_id = ?`, runID)
+		FROM runs WHERE run_id = $1`, runID)
 
 	var run Run
 	var parentRunID, parentStep, forEachKey sql.NullString
@@ -111,7 +114,7 @@ func (s *SQLiteStore) GetRun(ctx context.Context, runID string) (*Run, error) {
 	return &run, nil
 }
 
-func (s *SQLiteStore) ListRuns(ctx context.Context) ([]*Run, error) {
+func (s *PostgresStore) ListRuns(ctx context.Context) ([]*Run, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT run_id, workflow_file, entrypoint, status, vars_json,
 		       parent_run_id, parent_step, for_each_key, started_at, completed_at
@@ -144,11 +147,11 @@ func (s *SQLiteStore) ListRuns(ctx context.Context) ([]*Run, error) {
 	return runs, nil
 }
 
-func (s *SQLiteStore) GetChildRuns(ctx context.Context, parentRunID string) ([]*Run, error) {
+func (s *PostgresStore) GetChildRuns(ctx context.Context, parentRunID string) ([]*Run, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT run_id, workflow_file, entrypoint, status, vars_json,
 		       parent_run_id, parent_step, for_each_key, started_at, completed_at
-		FROM runs WHERE parent_run_id = ? ORDER BY started_at`, parentRunID)
+		FROM runs WHERE parent_run_id = $1 ORDER BY started_at`, parentRunID)
 	if err != nil {
 		return nil, fmt.Errorf("getting child runs: %w", err)
 	}
@@ -177,10 +180,10 @@ func (s *SQLiteStore) GetChildRuns(ctx context.Context, parentRunID string) ([]*
 	return runs, nil
 }
 
-func (s *SQLiteStore) SaveStep(ctx context.Context, step *StepResult) error {
+func (s *PostgresStore) SaveStep(ctx context.Context, step *StepResult) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO steps (run_id, workflow_name, step_name, status, output_json, artifacts_json, error, started_at, completed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (run_id, workflow_name, step_name) DO UPDATE SET
 			status = excluded.status,
 			output_json = excluded.output_json,
@@ -197,10 +200,10 @@ func (s *SQLiteStore) SaveStep(ctx context.Context, step *StepResult) error {
 	return nil
 }
 
-func (s *SQLiteStore) GetSteps(ctx context.Context, runID string) ([]*StepResult, error) {
+func (s *PostgresStore) GetSteps(ctx context.Context, runID string) ([]*StepResult, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT run_id, workflow_name, step_name, status, output_json, artifacts_json, error, started_at, completed_at
-		FROM steps WHERE run_id = ? ORDER BY started_at`, runID)
+		FROM steps WHERE run_id = $1 ORDER BY started_at`, runID)
 	if err != nil {
 		return nil, fmt.Errorf("getting steps: %w", err)
 	}
@@ -232,10 +235,10 @@ func (s *SQLiteStore) GetSteps(ctx context.Context, runID string) ([]*StepResult
 	return steps, nil
 }
 
-func (s *SQLiteStore) GetStep(ctx context.Context, runID, workflowName, stepName string) (*StepResult, error) {
+func (s *PostgresStore) GetStep(ctx context.Context, runID, workflowName, stepName string) (*StepResult, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT run_id, workflow_name, step_name, status, output_json, artifacts_json, error, started_at, completed_at
-		FROM steps WHERE run_id = ? AND workflow_name = ? AND step_name = ?`,
+		FROM steps WHERE run_id = $1 AND workflow_name = $2 AND step_name = $3`,
 		runID, workflowName, stepName)
 
 	var sr StepResult
@@ -259,15 +262,4 @@ func (s *SQLiteStore) GetStep(ctx context.Context, runID, workflowName, stepName
 		sr.CompletedAt = &completedAt.Time
 	}
 	return &sr, nil
-}
-
-func nullStr(s string) sql.NullString {
-	if s == "" {
-		return sql.NullString{}
-	}
-	return sql.NullString{String: s, Valid: true}
-}
-
-func timePtr(t time.Time) *time.Time {
-	return &t
 }

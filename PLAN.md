@@ -18,6 +18,7 @@
 
 ## Completed Tasks
 
+- [Add Postgres state store support](docs/tasks/done/postgres-state-store.md)
 - [Define directory workflow schema](docs/tasks/done/directory-workflow-schema.md)
 - [Implement directory loader and merge validation](docs/tasks/done/directory-loader-merge-validation.md)
 - [Wire directory input into CLI commands](docs/tasks/done/directory-cli-integration.md)

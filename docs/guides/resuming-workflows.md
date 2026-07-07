@@ -1,7 +1,7 @@
 {% raw %}
 # Resuming Workflows
 
-Markov checkpoints every run and step in a SQLite state store. When a run fails, `markov resume` reloads the original workflow source, rebuilds context from completed steps, skips completed work, and continues from the first incomplete or failed step.
+Markov checkpoints every run and step in a state store. SQLite is the default; Postgres can be selected with a `postgres://` or `postgresql://` DSN for durable shared state. When a run fails, `markov resume` reloads the original workflow source, rebuilds context from completed steps, skips completed work, and continues from the first incomplete or failed step.
 
 Use resume for failures that are safe to retry after an external fix: a missing secret, an unavailable API, a transient Kubernetes error, a bad variable value, or a workflow file bug that can be fixed without renaming completed steps.
 
@@ -33,6 +33,17 @@ markov run pipeline.yaml \
   --state-store /data/markov-state.db
 
 markov resume demo-reset-001 --state-store /data/markov-state.db
+```
+
+For orchestrated Kubernetes runs, use Postgres through an environment variable or Secret-backed value:
+
+```bash
+export MARKOV_STATE_STORE='postgres://markov:...@postgres:5432/markov_state?sslmode=disable'
+
+markov run /etc/markov/workflow \
+  --run-id markov-run-abc123
+
+markov resume markov-run-abc123
 ```
 
 ## What Resume Needs
@@ -125,7 +136,15 @@ sqlite3 /data/markov-state.db \
 
 ## Kubernetes Notes
 
-When Markov runs in-cluster, the default state store path is `/tmp/markov-state.db`. That path is writable, but it is usually ephemeral. To resume across pod restarts, mount persistent storage and pass an explicit state store path:
+When Markov runs in-cluster, the default SQLite state store path is `/tmp/markov-state.db`. That path is writable, but it is usually ephemeral. To resume across pod restarts, use Postgres or mount persistent storage and pass an explicit state store path.
+
+Postgres DSNs should be passed through Kubernetes Secrets:
+
+```bash
+markov run /etc/markov/pipeline
+```
+
+For SQLite on a PersistentVolumeClaim:
 
 ```bash
 markov run /etc/markov/pipeline \

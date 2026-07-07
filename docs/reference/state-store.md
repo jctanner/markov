@@ -1,16 +1,61 @@
 # State Store
 
-SQLite database for checkpoint/resume of workflow runs and steps. Uses pure Go SQLite via `modernc.org/sqlite` (no CGO required).
+Markov stores checkpoint/resume data in a state backend. SQLite is the default for local use and simple deployments. Postgres is available for orchestrators and concurrent Kubernetes runs that need durable shared state.
 
 For practical recovery steps and operational caveats, see [Resuming Workflows](../guides/resuming-workflows.md).
 
-## Default location
+## Backend selection
+
+The state store value selects the backend:
+
+| Value | Backend |
+|-------|---------|
+| `./markov-state.db` | SQLite |
+| `/path/to/markov-state.db` | SQLite |
+| `postgres://user:pass@host:5432/db?sslmode=disable` | Postgres |
+| `postgresql://user:pass@host:5432/db?sslmode=disable` | Postgres |
+
+SQLite uses pure Go SQLite via `modernc.org/sqlite` and does not require CGO. Postgres uses a native Go driver and creates Markov-owned checkpoint tables in the selected database.
+
+## Default location and precedence
+
+Markov chooses the state store in this order:
+
+| Priority | Source | Description |
+|----------|--------|-------------|
+| 1 | `--state-store <path-or-dsn>` | Explicit CLI flag on stateful commands. |
+| 2 | `MARKOV_STATE_STORE` | Environment variable containing a SQLite path or Postgres DSN. |
+| 3 | In-cluster default | `/tmp/markov-state.db` when a Kubernetes ServiceAccount token is mounted. |
+| 4 | Local default | `./markov-state.db`. |
+
+### Default SQLite location
 
 | Environment | Path | Detection |
 |-------------|------|-----------|
 | Local | `./markov-state.db` | Default |
 | In-cluster (K8s) | `/tmp/markov-state.db` | ServiceAccount token exists at `/var/run/secrets/kubernetes.io/serviceaccount/token` |
-| Custom | Any path | `--state-store <path>` flag |
+| Custom | Any path or DSN | `MARKOV_STATE_STORE` or `--state-store <path-or-dsn>` |
+
+## Postgres usage
+
+Use Postgres when multiple workflow pods need a shared durable checkpoint store:
+
+```bash
+export MARKOV_STATE_STORE='postgres://markov:...@postgres:5432/markov_state?sslmode=disable'
+
+markov run /etc/markov/workflow \
+  --run-id markov-run-abc123
+
+markov resume markov-run-abc123
+```
+
+Recommended production practice:
+
+- Pass the DSN through an environment variable sourced from a Kubernetes Secret.
+- Use a dedicated database, schema, or database user for Markov checkpoint state.
+- Keep Markov checkpoint tables separate from orchestrator application tables.
+- Ensure the original workflow source path is mounted at the same path for resume jobs.
+- Avoid putting Postgres credentials directly in shell history or logs.
 
 ## Schema
 
