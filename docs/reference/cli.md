@@ -29,7 +29,7 @@ markov run <file.yaml|directory> [flags]
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--var key=value` | string (repeatable) | -- | Override workflow variables. Can be specified multiple times. Values are parsed as strings. |
-| `--workflow name` | string | -- | Run a specific workflow by name instead of the file's `entrypoint`. |
+| `--workflow name` | string | -- | Run a specific workflow by its `name:` field instead of the file's `entrypoint`. |
 | `--forks N` | int | `0` (use file default) | Override the global `forks` concurrency limit. A value of 0 defers to the workflow file setting (which defaults to 5). |
 | `--namespace ns` | string | -- | Override the Kubernetes namespace for `k8s_job` steps. |
 | `--kubeconfig path` | string | -- | Path to a kubeconfig file for Kubernetes client configuration. |
@@ -57,6 +57,9 @@ markov run pipeline.yaml --var environment=production --var dry_run=true
 
 # Run a specific workflow instead of the entrypoint
 markov run pipeline.yaml --workflow deploy-target
+
+# Run a specific workflow from a directory workflow
+markov run examples/dir-based-hello-world --workflow process-item
 
 # Override concurrency and namespace
 markov run pipeline.yaml --forks 10 --namespace staging

@@ -67,6 +67,8 @@ The files map directly to the single-file schema:
 | `step_types/*.yaml` | map | Additional step type definition maps, merged by filename |
 | `workflows/*.yaml` | map | One workflow object per file, without a wrapping `workflows:` key |
 
+In directory mode, workflow filenames are only organizational. Markov loads every `workflows/*.yaml` file and identifies workflows by each file's `name:` field. The `meta.yaml` `entrypoint` and the CLI `--workflow` override both refer to that workflow name, not to the YAML filename. For example, `markov run pipeline/ --workflow deploy` runs the workflow object whose `name` is `deploy`; it does not require or specially search for `workflows/deploy.yaml`.
+
 Minimal example:
 
 ```yaml
