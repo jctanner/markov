@@ -2,7 +2,7 @@
 
 Markov stores checkpoint/resume data in a state backend. SQLite is the default for local use and simple deployments. Postgres is available for orchestrators and concurrent Kubernetes runs that need durable shared state.
 
-For practical recovery steps and operational caveats, see [Resuming Workflows](../guides/resuming-workflows.md).
+For practical recovery steps and operational caveats, see [Resuming Workflows](../guides/resuming-workflows.md). For production Postgres setup, see [Using Postgres for Markov State](../guides/postgres-state-store.md).
 
 ## Backend selection
 

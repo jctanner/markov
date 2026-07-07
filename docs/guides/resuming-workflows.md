@@ -138,6 +138,8 @@ sqlite3 /data/markov-state.db \
 
 When Markov runs in-cluster, the default SQLite state store path is `/tmp/markov-state.db`. That path is writable, but it is usually ephemeral. To resume across pod restarts, use Postgres or mount persistent storage and pass an explicit state store path.
 
+For a complete Postgres setup guide, see [Using Postgres for Markov State](postgres-state-store.md).
+
 Postgres DSNs should be passed through Kubernetes Secrets:
 
 ```bash
