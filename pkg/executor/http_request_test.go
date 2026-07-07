@@ -2,10 +2,19 @@ package executor
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"io"
+	"math/big"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHTTPRequestAppliesHeadersAndBasicAuth(t *testing.T) {
@@ -115,6 +124,73 @@ func TestHTTPRequestReturnsErrorForUnhandledErrorStatus(t *testing.T) {
 	}
 }
 
+func TestHTTPRequestTLSInsecureBuildsTLSClient(t *testing.T) {
+	exec := NewHTTPRequest()
+
+	client, err := exec.clientForParams(map[string]any{
+		"tls_insecure": true,
+	})
+	if err != nil {
+		t.Fatalf("clientForParams() error = %v", err)
+	}
+	if client == exec.client {
+		t.Fatal("clientForParams() returned default client, want TLS-specific client")
+	}
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("Transport = %T, want *http.Transport", client.Transport)
+	}
+	if transport.TLSClientConfig == nil {
+		t.Fatal("TLSClientConfig = nil, want config")
+	}
+	if !transport.TLSClientConfig.InsecureSkipVerify {
+		t.Fatal("InsecureSkipVerify = false, want true")
+	}
+}
+
+func TestHTTPRequestTLSCACertLoadsRootPool(t *testing.T) {
+	certPath := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(certPath, testCertificatePEM(t), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	config, enabled, err := tlsConfigFromParams(map[string]any{
+		"tls_ca_cert": certPath,
+	})
+	if err != nil {
+		t.Fatalf("tlsConfigFromParams() error = %v", err)
+	}
+	if !enabled {
+		t.Fatal("enabled = false, want true")
+	}
+	if config.InsecureSkipVerify {
+		t.Fatal("InsecureSkipVerify = true, want false")
+	}
+	if config.RootCAs == nil {
+		t.Fatal("RootCAs = nil, want cert pool")
+	}
+}
+
+func TestHTTPRequestRejectsInvalidTLSParams(t *testing.T) {
+	_, _, err := tlsConfigFromParams(map[string]any{
+		"tls_insecure": "true",
+	})
+	if err == nil {
+		t.Fatal("tlsConfigFromParams() error = nil, want invalid bool error")
+	}
+
+	badCertPath := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(badCertPath, []byte("not a certificate"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = tlsConfigFromParams(map[string]any{
+		"tls_ca_cert": badCertPath,
+	})
+	if err == nil {
+		t.Fatal("tlsConfigFromParams() error = nil, want invalid cert error")
+	}
+}
+
 type captureTransport struct {
 	request    *http.Request
 	statusCode int
@@ -129,4 +205,29 @@ func (t *captureTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		Body:       io.NopCloser(strings.NewReader(t.body)),
 		Request:    req,
 	}, nil
+}
+
+func testCertificatePEM(t *testing.T) []byte {
+	t.Helper()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			CommonName: "markov-test-ca",
+		},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 }

@@ -2,10 +2,13 @@ package executor
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -58,7 +61,12 @@ func (e *HTTPRequest) Execute(ctx context.Context, params map[string]any) (*Resu
 		return nil, err
 	}
 
-	resp, err := e.client.Do(req)
+	client, err := e.clientForParams(params)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("http_request: %w", err)
 	}
@@ -88,6 +96,55 @@ func (e *HTTPRequest) Execute(ctx context.Context, params map[string]any) (*Resu
 	}
 
 	return &Result{Output: output}, nil
+}
+
+func (e *HTTPRequest) clientForParams(params map[string]any) (*http.Client, error) {
+	tlsConfig, enabled, err := tlsConfigFromParams(params)
+	if err != nil {
+		return nil, err
+	}
+	if !enabled {
+		return e.client, nil
+	}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = tlsConfig
+	return &http.Client{
+		Transport:     transport,
+		CheckRedirect: e.client.CheckRedirect,
+		Jar:           e.client.Jar,
+		Timeout:       e.client.Timeout,
+	}, nil
+}
+
+func tlsConfigFromParams(params map[string]any) (*tls.Config, bool, error) {
+	insecure, err := boolParam(params["tls_insecure"], "tls_insecure")
+	if err != nil {
+		return nil, false, err
+	}
+	caCertPath, _ := params["tls_ca_cert"].(string)
+	if !insecure && caCertPath == "" {
+		return nil, false, nil
+	}
+
+	config := &tls.Config{InsecureSkipVerify: insecure}
+	if caCertPath == "" {
+		return config, true, nil
+	}
+
+	certPEM, err := os.ReadFile(caCertPath)
+	if err != nil {
+		return nil, false, fmt.Errorf("http_request: reading tls_ca_cert %q: %w", caCertPath, err)
+	}
+	roots, err := x509.SystemCertPool()
+	if err != nil {
+		roots = x509.NewCertPool()
+	}
+	if ok := roots.AppendCertsFromPEM(certPEM); !ok {
+		return nil, false, fmt.Errorf("http_request: tls_ca_cert %q contains no PEM certificates", caCertPath)
+	}
+	config.RootCAs = roots
+	return config, true, nil
 }
 
 func applyHeaders(req *http.Request, raw any) error {
@@ -168,6 +225,17 @@ func statusCodeValue(raw any) (int, error) {
 		return code, nil
 	default:
 		return 0, fmt.Errorf("http_request: ignore_status contains invalid status code %v", raw)
+	}
+}
+
+func boolParam(raw any, name string) (bool, error) {
+	switch v := raw.(type) {
+	case nil:
+		return false, nil
+	case bool:
+		return v, nil
+	default:
+		return false, fmt.Errorf("http_request: %s must be a bool", name)
 	}
 }
 

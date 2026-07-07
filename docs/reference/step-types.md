@@ -254,8 +254,12 @@ Makes HTTP requests with automatic JSON body encoding and response parsing.
 | `headers` | map[string]string | `{}` | Custom HTTP headers to add to the request |
 | `basic_auth` | map | -- | HTTP Basic Auth credentials with `username` and `password` fields |
 | `ignore_status` | bool or list[int] | -- | Treat matching HTTP error status codes as success. `true` ignores all `>= 400` responses. |
+| `tls_insecure` | bool | `false` | Skip TLS certificate verification for HTTPS requests. Intended for local development or trusted test environments. |
+| `tls_ca_cert` | string | -- | Path to a PEM-encoded CA certificate bundle to trust for this request. Useful for self-signed or private CA certificates. |
 
 When a `body` is provided, the `Content-Type` header is set to `application/json`. A custom `Content-Type` value in `headers` overrides that default. If both `basic_auth` and a custom `Authorization` header are provided, `basic_auth` takes precedence.
+
+For HTTPS endpoints with self-signed certificates, prefer `tls_ca_cert` when you have the CA certificate. Use `tls_insecure: true` only when certificate verification must be disabled.
 
 Either `url` or `base_url` must be specified. When both `base_url` and `path` are given, they are concatenated directly (no slash is inserted).
 
@@ -346,6 +350,30 @@ Token auth and tolerated status codes:
     body:
       name: "{{ repo_name }}"
   register: repo_create
+```
+
+HTTPS request to an endpoint signed by a private CA:
+
+```yaml
+- name: fetch_internal_status
+  type: http_request
+  params:
+    url: "https://internal.example.test/status"
+    headers:
+      Accept: "application/json"
+    tls_ca_cert: "/etc/markov/certs/internal-ca.pem"
+  register: internal_status
+```
+
+For disposable local environments, certificate verification can be disabled:
+
+```yaml
+- name: fetch_local_status
+  type: http_request
+  params:
+    url: "https://github.local/api/v3"
+    tls_insecure: true
+  register: github_status
 ```
 
 ---
