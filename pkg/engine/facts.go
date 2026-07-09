@@ -133,10 +133,16 @@ func extractFromJSONExpr(tmpl string) (string, bool) {
 		return "", false
 	}
 	inner := strings.TrimSpace(s[2 : len(s)-2])
-	if !strings.HasSuffix(inner, "| fromjson") {
+	filter := ""
+	switch {
+	case strings.HasSuffix(inner, "| from_json"):
+		filter = "| from_json"
+	case strings.HasSuffix(inner, "| fromjson"):
+		filter = "| fromjson"
+	default:
 		return "", false
 	}
-	path := strings.TrimSpace(inner[:len(inner)-len("| fromjson")])
+	path := strings.TrimSpace(inner[:len(inner)-len(filter)])
 	if path == "" {
 		return "", false
 	}

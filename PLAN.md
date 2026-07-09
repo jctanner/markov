@@ -29,6 +29,10 @@
 
 - [Direct for_each iterations collide in step state](docs/bugs/open/direct-foreach-step-dedup.md)
 
+## Fixed Bugs
+
+- [Template map values render as Go strings in HTTP bodies](docs/bugs/fixed/template-map-values-render-as-go-strings.md)
+
 ## Decisions
 
 - [ADR-0001: Directory Workflow File Layout](docs/decisions/ADR-0001-directory-workflow-layout.md)

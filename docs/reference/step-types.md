@@ -568,7 +568,7 @@ Each value in the `vars` map is evaluated according to its type:
 | Value Type | Behavior |
 |-----------|----------|
 | String containing `{{` or `{%` | Rendered as a Pongo2 template, then coerced: `"true"` becomes `true` (bool), integer strings are parsed to `int`, JSON arrays/objects are parsed into native types |
-| String with `{{ path \| fromjson }}` | The context path is resolved and its string value is parsed as JSON, preserving structure (maps, arrays, nested types) |
+| String with `{{ path \| from_json }}` or `{{ path \| fromjson }}` | The context path is resolved and its string value is parsed as JSON, preserving structure (maps, arrays, nested types) |
 | Plain string (no template syntax) | Evaluated as a boolean expression via `{% if expr %}true{% endif %}` |
 | Map with a `from` key | Table lookup (see below) |
 | Any other type | Stored directly (int, bool, list, map) |
@@ -631,13 +631,13 @@ Table lookup:
       default: "unassigned@example.com"
 ```
 
-JSON parsing with `fromjson`:
+JSON parsing with `from_json`:
 
 ```yaml
 - name: parse_result
   type: set_fact
   vars:
-    parsed_data: "{{ job_output.stdout | fromjson }}"
+    parsed_data: "{{ job_output.stdout | from_json }}"
 ```
 
 ---

@@ -192,7 +192,7 @@ Use `set_fact` to compute and store variables:
   vars:
     item_count: "{{ items | length }}"
     is_ready: "status == 'ready'"
-    data: "{{ raw_json | fromjson }}"
+    data: "{{ raw_json | from_json }}"
 ```
 
 Values are merged directly into the workflow context and available to all downstream steps.

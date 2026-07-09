@@ -1,6 +1,7 @@
 package template
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -121,5 +122,133 @@ func TestTrimFilter(t *testing.T) {
 	}
 	if result != "RHAISTRAT-1" {
 		t.Errorf("result = %q, want RHAISTRAT-1", result)
+	}
+}
+
+func TestToJSONFilterAliases(t *testing.T) {
+	eng := New()
+	ctx := map[string]any{
+		"config": map[string]any{"foo": "bar"},
+	}
+
+	for _, tmpl := range []string{
+		"{{ config | to_json }}",
+		"{{ config | tojson }}",
+	} {
+		result, err := eng.Render(tmpl, ctx)
+		if err != nil {
+			t.Fatalf("Render(%q): %v", tmpl, err)
+		}
+		var parsed map[string]any
+		if err := json.Unmarshal([]byte(result), &parsed); err != nil {
+			t.Fatalf("Render(%q) = %q, want JSON object: %v", tmpl, result, err)
+		}
+		if parsed["foo"] != "bar" {
+			t.Fatalf("parsed foo = %v, want bar", parsed["foo"])
+		}
+	}
+}
+
+func TestFromJSONAlias(t *testing.T) {
+	eng := New()
+	ctx := map[string]any{
+		"raw": `{"foo":"bar"}`,
+	}
+
+	rendered, err := eng.RenderMap(map[string]any{
+		"config": "{{ raw | from_json }}",
+	}, ctx)
+	if err != nil {
+		t.Fatalf("RenderMap: %v", err)
+	}
+	config, ok := rendered["config"].(map[string]any)
+	if !ok {
+		t.Fatalf("config = %#v, want map", rendered["config"])
+	}
+	if config["foo"] != "bar" {
+		t.Fatalf("foo = %v, want bar", config["foo"])
+	}
+}
+
+func TestFromJSONAliasParsesScalarInRenderMap(t *testing.T) {
+	eng := New()
+	ctx := map[string]any{
+		"raw": `42`,
+	}
+
+	rendered, err := eng.RenderMap(map[string]any{
+		"value": "{{ raw | from_json }}",
+	}, ctx)
+	if err != nil {
+		t.Fatalf("RenderMap: %v", err)
+	}
+	if rendered["value"] != float64(42) {
+		t.Fatalf("value = %#v, want float64(42)", rendered["value"])
+	}
+}
+
+func TestRenderMapExactExpressionPreservesNativeMap(t *testing.T) {
+	eng := New()
+	ctx := map[string]any{
+		"config": map[string]any{"foo": "bar"},
+	}
+
+	rendered, err := eng.RenderMap(map[string]any{
+		"body": map[string]any{
+			"args": map[string]any{
+				"some_map": "{{ config }}",
+			},
+		},
+	}, ctx)
+	if err != nil {
+		t.Fatalf("RenderMap: %v", err)
+	}
+
+	body := rendered["body"].(map[string]any)
+	args := body["args"].(map[string]any)
+	someMap, ok := args["some_map"].(map[string]any)
+	if !ok {
+		t.Fatalf("some_map = %#v, want map", args["some_map"])
+	}
+	if someMap["foo"] != "bar" {
+		t.Fatalf("foo = %v, want bar", someMap["foo"])
+	}
+}
+
+func TestRenderMapExactExpressionParsesJSONObjectString(t *testing.T) {
+	eng := New()
+	ctx := map[string]any{
+		"config": `{"foo":"bar"}`,
+	}
+
+	rendered, err := eng.RenderMap(map[string]any{
+		"some_map": "{{ config }}",
+	}, ctx)
+	if err != nil {
+		t.Fatalf("RenderMap: %v", err)
+	}
+	someMap, ok := rendered["some_map"].(map[string]any)
+	if !ok {
+		t.Fatalf("some_map = %#v, want map", rendered["some_map"])
+	}
+	if someMap["foo"] != "bar" {
+		t.Fatalf("foo = %v, want bar", someMap["foo"])
+	}
+}
+
+func TestRenderMapMixedTemplateStillRendersString(t *testing.T) {
+	eng := New()
+	ctx := map[string]any{
+		"config": map[string]any{"foo": "bar"},
+	}
+
+	rendered, err := eng.RenderMap(map[string]any{
+		"message": "config={{ config | to_json }}",
+	}, ctx)
+	if err != nil {
+		t.Fatalf("RenderMap: %v", err)
+	}
+	if rendered["message"] != `config={"foo":"bar"}` {
+		t.Fatalf("message = %q, want JSON string interpolation", rendered["message"])
 	}
 }

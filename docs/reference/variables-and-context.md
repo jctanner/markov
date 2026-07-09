@@ -51,7 +51,7 @@ A `set_fact` step computes values and merges them directly into the context.
   vars:
     full_name: "{{ first_name }} {{ last_name }}"
     is_ready: "{{ count > 0 }}"
-    config: "{{ raw_json | fromjson }}"
+    config: "{{ raw_json | from_json }}"
 ```
 
 Each fact is set into the context **immediately**, so later facts in the same `set_fact` step can reference earlier ones:
@@ -151,7 +151,7 @@ Each variable value in a `set_fact` step is evaluated by `evalFact` (in `facts.g
 | Value Pattern | Evaluation Path |
 |---|---|
 | String containing `{{` or `{%` | Template-rendered, then result is coerced via `coerceString` |
-| String matching `{{ path \| fromjson }}` exactly | Direct context path resolution + JSON parse (preserves structure) |
+| String matching `{{ path \| from_json }}` or `{{ path \| fromjson }}` exactly | Direct context path resolution + JSON parse (preserves structure) |
 | Plain string (no template delimiters) | Evaluated as boolean expression via `EvalBool` |
 | Map with `"from"` key | Table lookup (see Lookup Syntax below) |
 | Anything else (numbers, bools, lists, maps) | Stored directly without modification |
@@ -225,7 +225,7 @@ After a step completes and its output is registered, you can access it through t
 - name: parse_config
   type: set_fact
   vars:
-    config: "{{ config_response.body | fromjson }}"
+    config: "{{ config_response.body | from_json }}"
 
 # Artifact data (loaded via load_artifact or step artifacts)
 - name: load_data
@@ -253,5 +253,5 @@ The `resolveContextPath` function (in `engine.go:1017`) resolves dot-separated p
 - If any segment does not exist or the intermediate value is not a map, resolution returns `nil`.
 - Array index access is **not** supported in path resolution (use template syntax `{{ list.0 }}` instead, which is handled by pongo2).
 
-This function is used internally for `for_each` list resolution, `from` paths in lookup facts, and the `fromjson` direct resolution shortcut.
+This function is used internally for `for_each` list resolution, `from` paths in lookup facts, and the `from_json` / `fromjson` direct resolution shortcut.
 {% endraw %}

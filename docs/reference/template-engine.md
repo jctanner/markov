@@ -59,20 +59,62 @@ Removes leading and trailing whitespace from a value.
     issue_key: "{{ command_result.stdout | trim }}"
 ```
 
-### `fromjson`
+### `from_json` / `fromjson`
 
 Defined in `pkg/template/template.go`. Parses a JSON string into a native Go value (map, list, number, bool, etc.).
 
 ```yaml
 vars:
-  parsed_data: "{{ raw_json | fromjson }}"
+  parsed_data: "{{ raw_json | from_json }}"
 ```
+
+`fromjson` is supported as a compatibility alias.
 
 **Input must be valid JSON.** If the input string is not valid JSON, the filter returns an error and the step fails.
 
+### `to_json` / `tojson`
+
+Serializes a value to a compact JSON string. Prefer the Ansible-style `to_json` spelling in new workflows; `tojson` is also supported for Jinja-style compatibility.
+
+```yaml
+params:
+  command: "echo '{{ config | to_json }}'"
+```
+
+Use `to_json` when JSON text is needed inside a larger string. For structured fields such as `http_request.body`, exact value expressions usually do not need this filter because Markov preserves native maps and lists.
+
+```yaml
+params:
+  body:
+    config: "{{ config }}"              # native object
+    config_text: "{{ config | to_json }}" # JSON string
+```
+
+### Exact value expressions
+
+When a templated field is exactly a single value expression, Markov preserves native maps and lists instead of rendering them through Pongo2's string output:
+
+```yaml
+params:
+  body:
+    args:
+      config: "{{ config }}"
+```
+
+If `config` is a map or list, the rendered parameter remains a map or list. If `config` is a JSON-looking string beginning with `{` or `[`, Markov parses it into the corresponding native value. This is useful for HTTP request bodies, where the executor JSON-encodes the final body.
+
+This exact-expression path is triggered only when the whole string is the expression, with no surrounding text. Mixed templates still render to strings:
+
+```yaml
+params:
+  body:
+    config: "{{ config }}"                    # native object
+    message: "config={{ config | to_json }}"  # string
+```
+
 ### Special handling in set_fact
 
-When a `set_fact` var value is **exactly** `{{ path | fromjson }}` (no surrounding text), the engine bypasses normal template rendering. Instead, it:
+When a `set_fact` var value is **exactly** `{{ path | from_json }}` or `{{ path | fromjson }}` (no surrounding text), the engine bypasses normal template rendering. Instead, it:
 
 1. Resolves the dot-path directly from context
 2. JSON-parses the raw string value
@@ -94,7 +136,7 @@ This avoids the flattening that would occur if pongo2 rendered the value to a st
     config: "prefix {{ raw_config_json | fromjson }} suffix"
 ```
 
-The special path is triggered only when the entire value matches the pattern `{{ <path> | fromjson }}` with nothing before or after the braces.
+The special path is triggered only when the entire value matches the pattern `{{ <path> | from_json }}` or `{{ <path> | fromjson }}` with nothing before or after the braces.
 
 ## Built-in Pongo2 Filters
 

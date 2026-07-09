@@ -143,7 +143,7 @@ Together, these ensure that `markov resume` correctly matches completed items ev
 
 ## Iterating Over Dynamic Data
 
-Use `fromjson` to parse JSON output from a previous step:
+Use `from_json` to parse JSON output from a previous step. The older `fromjson` spelling is also supported.
 
 ```yaml
 - name: produce_json
@@ -155,7 +155,7 @@ Use `fromjson` to parse JSON output from a previous step:
 - name: parse_it
   type: set_fact
   vars:
-    items: "{{ produce_json.stdout | fromjson }}"
+    items: "{{ produce_json.stdout | from_json }}"
 
 - name: process_items
   for_each: items
