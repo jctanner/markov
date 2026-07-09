@@ -2,12 +2,34 @@ package engine
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/jctanner/markov/pkg/callback"
 	"github.com/jctanner/markov/pkg/executor"
 	"github.com/jctanner/markov/pkg/parser"
 )
+
+type countExec struct {
+	mu       sync.Mutex
+	commands []any
+}
+
+func (c *countExec) Execute(ctx context.Context, params map[string]any) (*executor.Result, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.commands = append(c.commands, params["command"])
+	return &executor.Result{Output: map[string]any{"ok": true}}, nil
+}
+
+func (c *countExec) Commands() []any {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]any, len(c.commands))
+	copy(out, c.commands)
+	return out
+}
 
 func TestForEachKey_UsesItemField(t *testing.T) {
 	wfFile := &parser.WorkflowFile{
@@ -75,6 +97,114 @@ func TestForEachKey_UsesItemField(t *testing.T) {
 	}
 	if !hasEpic100 || !hasEpic200 {
 		t.Errorf("keys = %v, want [EPIC-100, EPIC-200]", keys)
+	}
+}
+
+func TestDirectForEachTypedStepUsesDistinctState(t *testing.T) {
+	wfFile := &parser.WorkflowFile{
+		Entrypoint: "main",
+		Vars:       map[string]any{"items": []any{"alpha", "bravo", "charlie"}},
+		Workflows: []parser.Workflow{
+			{
+				Name: "main",
+				Steps: []parser.Step{
+					{
+						Name:        "process_items",
+						ForEach:     "items",
+						As:          "item",
+						Type:        "shell_exec",
+						Params:      map[string]any{"command": "echo {{ item }}"},
+						Concurrency: 1,
+					},
+				},
+			},
+		},
+	}
+
+	exec := &countExec{}
+	eng, _ := newTestEngine(t, wfFile, map[string]executor.Executor{"shell_exec": exec})
+
+	ctx := context.Background()
+	runID, err := eng.Run(ctx, "main", nil)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	commands := exec.Commands()
+	if len(commands) != 3 {
+		t.Fatalf("executor calls = %d, want 3: %v", len(commands), commands)
+	}
+
+	steps, err := eng.store.GetSteps(ctx, runID)
+	if err != nil {
+		t.Fatalf("GetSteps: %v", err)
+	}
+
+	got := make(map[string]bool)
+	for _, step := range steps {
+		got[step.StepName] = true
+	}
+	for _, want := range []string{"process_items[0]", "process_items[1]", "process_items[2]"} {
+		if !got[want] {
+			t.Errorf("missing state step %q in %#v", want, got)
+		}
+	}
+}
+
+func TestDirectForEachTypedStepLargeFanOutUsesDistinctState(t *testing.T) {
+	items := make([]any, 200)
+	for i := range items {
+		items[i] = map[string]any{"id": i}
+	}
+
+	wfFile := &parser.WorkflowFile{
+		Entrypoint: "main",
+		Vars:       map[string]any{"items": items},
+		Workflows: []parser.Workflow{
+			{
+				Name: "main",
+				Steps: []parser.Step{
+					{
+						Name:        "process_items",
+						ForEach:     "items",
+						ForEachKey:  "id",
+						As:          "item",
+						Type:        "shell_exec",
+						Params:      map[string]any{"command": "echo {{ item.id }}"},
+						Concurrency: 20,
+					},
+				},
+			},
+		},
+	}
+
+	exec := &countExec{}
+	eng, _ := newTestEngine(t, wfFile, map[string]executor.Executor{"shell_exec": exec})
+
+	ctx := context.Background()
+	runID, err := eng.Run(ctx, "main", nil)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if got := len(exec.Commands()); got != len(items) {
+		t.Fatalf("executor calls = %d, want %d", got, len(items))
+	}
+
+	steps, err := eng.store.GetSteps(ctx, runID)
+	if err != nil {
+		t.Fatalf("GetSteps: %v", err)
+	}
+
+	seen := make(map[string]bool, len(steps))
+	for _, step := range steps {
+		seen[step.StepName] = true
+	}
+	for i := range items {
+		want := fmt.Sprintf("process_items[%d]", i)
+		if !seen[want] {
+			t.Fatalf("missing state step %q", want)
+		}
 	}
 }
 

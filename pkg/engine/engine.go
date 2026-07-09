@@ -268,7 +268,11 @@ func (e *Engine) executeWorkflow(ctx context.Context, runID string, wf *parser.W
 }
 
 func (e *Engine) executeStep(ctx context.Context, runID string, workflowName string, step parser.Step, runCtx map[string]any) error {
-	existing, _ := e.store.GetStep(ctx, runID, workflowName, step.Name)
+	return e.executeStepWithStateName(ctx, runID, workflowName, step, step.Name, runCtx)
+}
+
+func (e *Engine) executeStepWithStateName(ctx context.Context, runID string, workflowName string, step parser.Step, stateStepName string, runCtx map[string]any) error {
+	existing, _ := e.store.GetStep(ctx, runID, workflowName, stateStepName)
 	if existing != nil && existing.Status == state.StepCompleted {
 		log.Printf("[run:%s] skipping completed step %q", runID, step.Name)
 		if existing.OutputJSON != "" {
@@ -302,7 +306,7 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 			e.store.SaveStep(ctx, &state.StepResult{
 				RunID:        runID,
 				WorkflowName: workflowName,
-				StepName:     step.Name,
+				StepName:     stateStepName,
 				Status:       state.StepSkipped,
 				StartedAt:    &now,
 				CompletedAt:  &now,
@@ -413,11 +417,11 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 	if base == "set_fact" {
 		log.Printf("[run:%s] setting facts for step %q", runID, step.Name)
 		if len(step.Vars) == 0 {
-			return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("set_fact step has no vars defined"))
+			return e.failStep(ctx, runID, workflowName, stateStepName, base, now, fmt.Errorf("set_fact step has no vars defined"))
 		}
 		facts, err := e.evalFacts(step.Vars, runCtx)
 		if err != nil {
-			return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("evaluating facts: %w", err))
+			return e.failStep(ctx, runID, workflowName, stateStepName, base, now, fmt.Errorf("evaluating facts: %w", err))
 		}
 		for k, v := range facts {
 			runCtx[k] = v
@@ -428,7 +432,7 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 		e.store.SaveStep(ctx, &state.StepResult{
 			RunID:        runID,
 			WorkflowName: workflowName,
-			StepName:     step.Name,
+			StepName:     stateStepName,
 			Status:       state.StepCompleted,
 			OutputJSON:   string(factsJSON),
 			StartedAt:    &now,
@@ -451,19 +455,19 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 	if base == "assert" {
 		log.Printf("[run:%s] evaluating assertions for step %q", runID, step.Name)
 		if len(step.That) == 0 {
-			return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("assert step has no conditions defined"))
+			return e.failStep(ctx, runID, workflowName, stateStepName, base, now, fmt.Errorf("assert step has no conditions defined"))
 		}
 		for _, expr := range step.That {
 			ok, err := e.tmpl.EvalBool(expr, runCtx)
 			if err != nil {
-				return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("evaluating assertion %q: %w", expr, err))
+				return e.failStep(ctx, runID, workflowName, stateStepName, base, now, fmt.Errorf("evaluating assertion %q: %w", expr, err))
 			}
 			if !ok {
 				msg := step.Msg
 				if msg == "" {
 					msg = fmt.Sprintf("assertion failed: %s", expr)
 				}
-				return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("%s", msg))
+				return e.failStep(ctx, runID, workflowName, stateStepName, base, now, fmt.Errorf("%s", msg))
 			}
 			e.verbose("[run:%s]   assert %q: ok", runID, expr)
 		}
@@ -471,7 +475,7 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 		e.store.SaveStep(ctx, &state.StepResult{
 			RunID:        runID,
 			WorkflowName: workflowName,
-			StepName:     step.Name,
+			StepName:     stateStepName,
 			Status:       state.StepCompleted,
 			StartedAt:    &now,
 			CompletedAt:  &completed,
@@ -493,7 +497,7 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 		log.Printf("[run:%s] evaluating gate %q (%d rules)", runID, step.Name, len(step.Rules))
 		result, err := e.evaluateGate(runID, step.Rules, step.Facts, runCtx)
 		if err != nil {
-			return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("gate evaluation: %w", err))
+			return e.failStep(ctx, runID, workflowName, stateStepName, base, now, fmt.Errorf("gate evaluation: %w", err))
 		}
 
 		e.fireEvent(func(cb callback.Callback) error {
@@ -522,7 +526,7 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 		e.store.SaveStep(ctx, &state.StepResult{
 			RunID:        runID,
 			WorkflowName: workflowName,
-			StepName:     step.Name,
+			StepName:     stateStepName,
 			Status:       state.StepCompleted,
 			OutputJSON:   string(outputJSON),
 			StartedAt:    &now,
@@ -544,11 +548,11 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 	if base == "load_artifact" {
 		log.Printf("[run:%s] loading artifacts for step %q", runID, step.Name)
 		if len(step.Artifacts) == 0 {
-			return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("load_artifact step has no artifacts defined"))
+			return e.failStep(ctx, runID, workflowName, stateStepName, base, now, fmt.Errorf("load_artifact step has no artifacts defined"))
 		}
 		artifacts, err := e.loadArtifacts(step.Artifacts, runCtx)
 		if err != nil {
-			return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("loading artifacts: %w", err))
+			return e.failStep(ctx, runID, workflowName, stateStepName, base, now, fmt.Errorf("loading artifacts: %w", err))
 		}
 		runCtx[step.Name] = map[string]any{"artifacts": artifacts}
 		e.verbose("[run:%s]   loaded %d artifact(s)", runID, len(artifacts))
@@ -556,7 +560,7 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 		e.store.SaveStep(ctx, &state.StepResult{
 			RunID:        runID,
 			WorkflowName: workflowName,
-			StepName:     step.Name,
+			StepName:     stateStepName,
 			Status:       state.StepCompleted,
 			StartedAt:    &now,
 			CompletedAt:  &completed,
@@ -577,7 +581,7 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 	e.store.SaveStep(ctx, &state.StepResult{
 		RunID:        runID,
 		WorkflowName: workflowName,
-		StepName:     step.Name,
+		StepName:     stateStepName,
 		Status:       state.StepRunning,
 		StartedAt:    &now,
 	})
@@ -587,7 +591,7 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 
 	renderedParams, err := e.tmpl.RenderMap(mergedParams, runCtx)
 	if err != nil {
-		return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("rendering params: %w", err))
+		return e.failStep(ctx, runID, workflowName, stateStepName, base, now, fmt.Errorf("rendering params: %w", err))
 	}
 
 	if base == "k8s_job" {
@@ -611,7 +615,7 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 
 	exec, ok := e.executors[base]
 	if !ok {
-		return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("no executor for type %q", base))
+		return e.failStep(ctx, runID, workflowName, stateStepName, base, now, fmt.Errorf("no executor for type %q", base))
 	}
 
 	var execCtx context.Context
@@ -645,7 +649,7 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 
 	result, err := exec.Execute(execCtx, renderedParams)
 	if err != nil {
-		return e.failStep(ctx, runID, workflowName, step.Name, base, now, err)
+		return e.failStep(ctx, runID, workflowName, stateStepName, base, now, err)
 	}
 
 	output := result.Output
@@ -657,7 +661,7 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 	if len(step.Artifacts) > 0 {
 		artifacts, err := e.loadArtifacts(step.Artifacts, runCtx)
 		if err != nil {
-			return e.failStep(ctx, runID, workflowName, step.Name, base, now, fmt.Errorf("loading artifacts: %w", err))
+			return e.failStep(ctx, runID, workflowName, stateStepName, base, now, fmt.Errorf("loading artifacts: %w", err))
 		}
 		stepData := map[string]any{"artifacts": artifacts}
 		if output != nil {
@@ -679,7 +683,7 @@ func (e *Engine) executeStep(ctx context.Context, runID string, workflowName str
 	e.store.SaveStep(ctx, &state.StepResult{
 		RunID:         runID,
 		WorkflowName:  workflowName,
-		StepName:      step.Name,
+		StepName:      stateStepName,
 		Status:        state.StepCompleted,
 		OutputJSON:    string(outputJSON),
 		ArtifactsJSON: artifactsJSON,
@@ -964,7 +968,13 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 				subStep.ForEach = ""
 				subStep.Register = ""
 
-				err := e.executeStep(ctx, runID, workflowName, subStep, itemCtx)
+				forEachKey := fmt.Sprintf("%d", idx)
+				if step.ForEachKey != "" {
+					forEachKey = fmt.Sprintf("%v", extractItemField(itemVal, step.ForEachKey))
+				}
+				stateStepName := fmt.Sprintf("%s[%s]", step.Name, forEachKey)
+
+				err := e.executeStepWithStateName(ctx, runID, workflowName, subStep, stateStepName, itemCtx)
 				if err != nil {
 					errOnce.Do(func() { firstErr = err })
 					return
