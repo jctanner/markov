@@ -407,9 +407,10 @@ func buildExecutors(wf *parser.WorkflowFile) (map[string]executor.Executor, erro
 
 	k8sClient, _, err := getK8sClient()
 	if err != nil {
-		log.Printf("warning: k8s client unavailable: %v (k8s_job steps will fail)", err)
+		log.Printf("warning: k8s client unavailable: %v (k8s_job and k8s_job_wait steps will fail)", err)
 	} else {
 		executors["k8s_job"] = executor.NewK8sJob(k8sClient, namespace)
+		executors["k8s_job_wait"] = executor.NewK8sJobWait(k8sClient, namespace)
 	}
 
 	debugLog("executors: registered %v", func() []string {

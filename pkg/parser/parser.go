@@ -285,6 +285,7 @@ func validateSteps(wf *WorkflowFile, workflowName string, steps []Step) error {
 
 var primitives = map[string]bool{
 	"k8s_job":       true,
+	"k8s_job_wait":  true,
 	"http_request":  true,
 	"llm_invoke":    true,
 	"shell_exec":    true,

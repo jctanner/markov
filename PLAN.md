@@ -18,6 +18,7 @@
 
 ## Completed Tasks
 
+- [Add k8s_job_wait step type](docs/tasks/done/k8s-job-wait-step-type.md)
 - [Add Postgres state store support](docs/tasks/done/postgres-state-store.md)
 - [Define directory workflow schema](docs/tasks/done/directory-workflow-schema.md)
 - [Implement directory loader and merge validation](docs/tasks/done/directory-loader-merge-validation.md)

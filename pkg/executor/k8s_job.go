@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -24,8 +26,17 @@ type K8sJob struct {
 	onJobCreated func(K8sJobInfo)
 }
 
+type K8sJobWait struct {
+	client    kubernetes.Interface
+	namespace string
+}
+
 func NewK8sJob(client kubernetes.Interface, namespace string) *K8sJob {
 	return &K8sJob{client: client, namespace: namespace}
+}
+
+func NewK8sJobWait(client kubernetes.Interface, namespace string) *K8sJobWait {
+	return &K8sJobWait{client: client, namespace: namespace}
 }
 
 func (e *K8sJob) SetOnJobCreated(fn func(K8sJobInfo)) {
@@ -52,7 +63,7 @@ func (e *K8sJob) Execute(ctx context.Context, params map[string]any) (*Result, e
 	if e.onJobCreated != nil {
 		e.onJobCreated(K8sJobInfo{JobName: jobName, Namespace: ns})
 	}
-	err = e.waitForCompletion(ctx, ns, jobName)
+	_, err = waitForJobCompletion(ctx, e.client, ns, jobName, false)
 
 	logs := e.getPodLogs(ctx, ns, jobName)
 
@@ -66,6 +77,48 @@ func (e *K8sJob) Execute(ctx context.Context, params map[string]any) (*Result, e
 
 	if err != nil {
 		return &Result{Output: output}, fmt.Errorf("k8s_job: %w", err)
+	}
+
+	return &Result{Output: output}, nil
+}
+
+func (e *K8sJobWait) Execute(ctx context.Context, params map[string]any) (*Result, error) {
+	jobName, _ := params["job_name"].(string)
+	if jobName == "" {
+		return nil, fmt.Errorf("k8s_job_wait: job_name is required")
+	}
+
+	ns := e.namespace
+	if nsOverride, ok := params["namespace"].(string); ok && nsOverride != "" {
+		ns = nsOverride
+	}
+
+	waitCtx := ctx
+	cancel := func() {}
+	timeoutSeconds := toInt64Default(params["timeout"], 3600)
+	if timeoutSeconds > 0 {
+		waitCtx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
+	}
+	defer cancel()
+
+	status, err := waitForJobCompletion(waitCtx, e.client, ns, jobName, true)
+
+	output := map[string]any{
+		"job_name":  jobName,
+		"namespace": ns,
+		"status":    status,
+	}
+
+	tailLogs := toBoolDefault(params["tail_logs"], true)
+	if tailLogs {
+		logBytes := toInt64Default(params["log_bytes"], maxLogBytes)
+		if logs := getJobPodLogs(ctx, e.client, ns, jobName, logBytes); logs != "" {
+			output["logs"] = logs
+		}
+	}
+
+	if err != nil {
+		return &Result{Output: output}, fmt.Errorf("k8s_job_wait: %w", err)
 	}
 
 	return &Result{Output: output}, nil
@@ -416,18 +469,70 @@ func toInt32(val any) int32 {
 	return 0
 }
 
+func toInt64Default(val any, def int64) int64 {
+	switch v := val.(type) {
+	case nil:
+		return def
+	case int:
+		return int64(v)
+	case int32:
+		return int64(v)
+	case int64:
+		return v
+	case float64:
+		return int64(v)
+	case string:
+		if v == "" {
+			return def
+		}
+		i, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return def
+		}
+		return i
+	}
+	return def
+}
+
+func toBoolDefault(val any, def bool) bool {
+	switch v := val.(type) {
+	case nil:
+		return def
+	case bool:
+		return v
+	case string:
+		if v == "" {
+			return def
+		}
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return def
+		}
+		return b
+	}
+	return def
+}
+
 const maxLogBytes = 64 * 1024
 
 func (e *K8sJob) getPodLogs(ctx context.Context, namespace, jobName string) string {
-	pods, err := e.client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+	return getJobPodLogs(ctx, e.client, namespace, jobName, maxLogBytes)
+}
+
+func getJobPodLogs(ctx context.Context, client kubernetes.Interface, namespace, jobName string, maxBytes int64) string {
+	if maxBytes <= 0 {
+		maxBytes = maxLogBytes
+	}
+
+	pods, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: fmt.Sprintf("job-name=%s", jobName),
 	})
 	if err != nil || len(pods.Items) == 0 {
 		return ""
 	}
 
-	var limitBytes int64 = maxLogBytes
-	stream, err := e.client.CoreV1().Pods(namespace).GetLogs(pods.Items[0].Name, &corev1.PodLogOptions{
+	limitBytes := maxBytes
+	stream, err := client.CoreV1().Pods(namespace).GetLogs(pods.Items[0].Name, &corev1.PodLogOptions{
 		LimitBytes: &limitBytes,
 	}).Stream(ctx)
 	if err != nil {
@@ -443,26 +548,45 @@ func (e *K8sJob) getPodLogs(ctx context.Context, namespace, jobName string) stri
 }
 
 func (e *K8sJob) waitForCompletion(ctx context.Context, namespace, jobName string) error {
+	_, err := waitForJobCompletion(ctx, e.client, namespace, jobName, false)
+	return err
+}
+
+func waitForJobCompletion(ctx context.Context, client kubernetes.Interface, namespace, jobName string, waitForCreate bool) (string, error) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
+	lastStatus := "pending"
 	for {
+		status, done, err := checkJobStatus(ctx, client, namespace, jobName, waitForCreate)
+		lastStatus = status
+		if done || err != nil {
+			return status, err
+		}
+
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return lastStatus, ctx.Err()
 		case <-ticker.C:
-			job, err := e.client.BatchV1().Jobs(namespace).Get(ctx, jobName, metav1.GetOptions{})
-			if err != nil {
-				return fmt.Errorf("polling job status: %w", err)
-			}
-			for _, c := range job.Status.Conditions {
-				if c.Type == batchv1.JobComplete && c.Status == corev1.ConditionTrue {
-					return nil
-				}
-				if c.Type == batchv1.JobFailed && c.Status == corev1.ConditionTrue {
-					return fmt.Errorf("job %s failed: %s", jobName, c.Message)
-				}
-			}
 		}
 	}
+}
+
+func checkJobStatus(ctx context.Context, client kubernetes.Interface, namespace, jobName string, waitForCreate bool) (status string, done bool, err error) {
+	job, err := client.BatchV1().Jobs(namespace).Get(ctx, jobName, metav1.GetOptions{})
+	if err != nil {
+		if waitForCreate && apierrors.IsNotFound(err) {
+			return "pending", false, nil
+		}
+		return "pending", true, fmt.Errorf("polling job status: %w", err)
+	}
+	for _, c := range job.Status.Conditions {
+		if c.Type == batchv1.JobComplete && c.Status == corev1.ConditionTrue {
+			return "completed", true, nil
+		}
+		if c.Type == batchv1.JobFailed && c.Status == corev1.ConditionTrue {
+			return "failed", true, fmt.Errorf("job %s failed: %s", jobName, c.Message)
+		}
+	}
+	return "running", false, nil
 }

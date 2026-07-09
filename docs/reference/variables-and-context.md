@@ -139,6 +139,7 @@ What gets stored by `register` depends on the step type:
 |---|---|
 | `shell_exec` | The executor's `Result.Output` map (typically contains `stdout`, `stderr`, `rc`) |
 | `k8s_job` | The executor's `Result.Output` map (contains job output) |
+| `k8s_job_wait` | The executor's `Result.Output` map (contains `job_name`, `namespace`, `status`, and optional `logs`) |
 | `http_request` | The executor's `Result.Output` map (typically contains `body`, `status_code`, `headers`) |
 | Sub-workflow (`workflow:`) | The entire sub-workflow context map (all vars at end of execution) |
 | `for_each` | A list (`[]map[string]any`) of all iteration contexts |

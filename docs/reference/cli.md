@@ -309,7 +309,7 @@ Markov resolves the Kubernetes client configuration in the following order. The 
 | 3 | `KUBECONFIG` env var | Path to a kubeconfig file set via the environment variable. |
 | 4 | Default loading rules | Standard kubeconfig resolution (`~/.kube/config` and other default locations). |
 
-If no Kubernetes client can be configured, a warning is logged and `k8s_job` steps will fail at runtime.
+If no Kubernetes client can be configured, a warning is logged and `k8s_job` or `k8s_job_wait` steps will fail at runtime.
 
 ---
 

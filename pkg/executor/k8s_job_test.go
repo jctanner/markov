@@ -2,9 +2,11 @@ package executor
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -151,5 +153,165 @@ func TestExecuteOutput_OmitsLogs_WhenEmpty(t *testing.T) {
 
 	if _, ok := output["logs"]; ok {
 		t.Error("output should not contain 'logs' key when logs are empty")
+	}
+}
+
+func TestK8sJobWaitExecute_CompletedJob(t *testing.T) {
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "myjob",
+			Namespace: "test-ns",
+		},
+		Status: batchv1.JobStatus{
+			Conditions: []batchv1.JobCondition{
+				{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
+			},
+		},
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "myjob-abc12",
+			Namespace: "test-ns",
+			Labels:    map[string]string{"job-name": "myjob"},
+		},
+	}
+	client := fake.NewSimpleClientset(job, pod)
+	e := NewK8sJobWait(client, "test-ns")
+
+	result, err := e.Execute(context.Background(), map[string]any{
+		"job_name": "myjob",
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	if result.Output["job_name"] != "myjob" {
+		t.Errorf("job_name = %v, want myjob", result.Output["job_name"])
+	}
+	if result.Output["namespace"] != "test-ns" {
+		t.Errorf("namespace = %v, want test-ns", result.Output["namespace"])
+	}
+	if result.Output["status"] != "completed" {
+		t.Errorf("status = %v, want completed", result.Output["status"])
+	}
+	if result.Output["logs"] == "" {
+		t.Error("logs are empty, want captured pod logs")
+	}
+}
+
+func TestK8sJobWaitExecute_FailedJob(t *testing.T) {
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "myjob",
+			Namespace: "test-ns",
+		},
+		Status: batchv1.JobStatus{
+			Conditions: []batchv1.JobCondition{
+				{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Message: "backoff limit exceeded"},
+			},
+		},
+	}
+	client := fake.NewSimpleClientset(job)
+	e := NewK8sJobWait(client, "test-ns")
+
+	result, err := e.Execute(context.Background(), map[string]any{
+		"job_name": "myjob",
+	})
+	if err == nil {
+		t.Fatal("Execute() error = nil, want failed job error")
+	}
+	if !strings.Contains(err.Error(), "backoff limit exceeded") {
+		t.Fatalf("Execute() error = %v, want backoff message", err)
+	}
+	if result == nil {
+		t.Fatal("Execute() result is nil, want output with failed status")
+	}
+	if result.Output["status"] != "failed" {
+		t.Errorf("status = %v, want failed", result.Output["status"])
+	}
+}
+
+func TestK8sJobWaitExecute_WaitsForMissingJobUntilContextDone(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	e := NewK8sJobWait(client, "test-ns")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	result, err := e.Execute(ctx, map[string]any{
+		"job_name": "eventual-job",
+		"timeout":  0,
+	})
+	if err == nil {
+		t.Fatal("Execute() error = nil, want context timeout")
+	}
+	if result == nil {
+		t.Fatal("Execute() result is nil, want output with pending status")
+	}
+	if result.Output["status"] != "pending" {
+		t.Errorf("status = %v, want pending", result.Output["status"])
+	}
+}
+
+func TestK8sJobWaitExecute_RunningJobUntilContextDone(t *testing.T) {
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "myjob",
+			Namespace: "test-ns",
+		},
+	}
+	client := fake.NewSimpleClientset(job)
+	e := NewK8sJobWait(client, "test-ns")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	result, err := e.Execute(ctx, map[string]any{
+		"job_name": "myjob",
+		"timeout":  0,
+	})
+	if err == nil {
+		t.Fatal("Execute() error = nil, want context timeout")
+	}
+	if result == nil {
+		t.Fatal("Execute() result is nil, want output with running status")
+	}
+	if result.Output["status"] != "running" {
+		t.Errorf("status = %v, want running", result.Output["status"])
+	}
+}
+
+func TestK8sJobWaitExecute_TailLogsFalse(t *testing.T) {
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "myjob",
+			Namespace: "test-ns",
+		},
+		Status: batchv1.JobStatus{
+			Conditions: []batchv1.JobCondition{
+				{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
+			},
+		},
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "myjob-abc12",
+			Namespace: "test-ns",
+			Labels:    map[string]string{"job-name": "myjob"},
+		},
+	}
+	client := fake.NewSimpleClientset(job, pod)
+	e := NewK8sJobWait(client, "test-ns")
+
+	result, err := e.Execute(context.Background(), map[string]any{
+		"job_name":  "myjob",
+		"tail_logs": false,
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	if _, ok := result.Output["logs"]; ok {
+		t.Error("logs present with tail_logs=false")
 	}
 }

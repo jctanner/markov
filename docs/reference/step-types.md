@@ -1,7 +1,7 @@
 {% raw %}
 # Built-in Step Types
 
-Markov ships with eight primitive step types. Every step in a workflow must resolve to one of these primitives, either directly or through a [custom step type](custom-step-types.md).
+Markov ships with nine primitive step types. Every step in a workflow must resolve to one of these primitives, either directly or through a [custom step type](custom-step-types.md).
 
 All step types support these common fields:
 
@@ -234,6 +234,80 @@ Complete k8s_job with volumes and secrets:
           match_labels:
             app: pipeline-dashboard
   register: job_result
+```
+
+---
+
+## k8s_job_wait
+
+Waits for an existing Kubernetes `batch/v1` Job to complete or fail. Use this when another service creates the Job and Markov only needs to watch it, collect pod logs, and continue the workflow.
+
+This complements `k8s_job`: `k8s_job` creates a new Job, while `k8s_job_wait` watches a named Job that already exists or may appear shortly.
+
+### Parameters
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `job_name` | string, required | -- | Name of the Kubernetes Job to watch |
+| `namespace` | string | workflow namespace | Override the global namespace for this step |
+| `timeout` | int | `3600` | Seconds to wait for the Job to appear and then finish. Set to `0` to rely only on the step or parent context timeout. |
+| `tail_logs` | bool | `true` | Capture pod logs after completion or failure |
+| `log_bytes` | int | `65536` | Maximum number of log bytes to capture |
+
+### Output Variables
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `job_name` | string | Name of the watched Kubernetes Job |
+| `namespace` | string | Namespace the Job was watched in |
+| `status` | string | `completed`, `failed`, `running`, or `pending` when the wait is cancelled before the Job appears |
+| `logs` | string | Pod logs, up to `log_bytes`, when `tail_logs` is true and logs are available |
+
+### Failure Conditions
+
+- `job_name` is empty or missing.
+- The Kubernetes API returns an error other than "not found" while checking the Job.
+- The Job's status condition becomes `Failed`.
+- The `timeout` expires or the parent context is cancelled.
+
+### Example
+
+Submit a Job through an external dashboard API, then wait on the Kubernetes Job directly:
+
+```yaml
+- name: submit
+  type: http_request
+  params:
+    base_url: "http://pipeline-dashboard:5000"
+    path: /api/jobs/submit
+    method: POST
+    body:
+      fqn: "github.local/opendatahub-io/rfe-creator@main:rfe.speedrun"
+      args:
+        issue: RHAIRFE-1
+        model: opus
+  register: submitted_job
+
+- name: wait_for_completion
+  type: k8s_job_wait
+  params:
+    job_name: "{{ submitted_job.body.job_name }}"
+    timeout: 3600
+    tail_logs: true
+  register: watched_job
+```
+
+Reusable custom type:
+
+```yaml
+step_types:
+  agent_job_wait:
+    base: k8s_job_wait
+    params:
+      namespace: ai-pipeline
+      timeout: 3600
+      tail_logs: true
+      log_bytes: 131072
 ```
 
 ---

@@ -337,6 +337,7 @@ These are the built-in step types available in every workflow file.
 | Type | Description |
 |------|-------------|
 | `k8s_job` | Run a container as a Kubernetes Job. Requires a configured K8s client. |
+| `k8s_job_wait` | Wait for an existing Kubernetes Job by name. Requires a configured K8s client. |
 | `http_request` | Make an HTTP request. |
 | `shell_exec` | Execute a shell command on the local machine. |
 | `gate` | Evaluate named rules against the current context. Controls flow based on rule outcomes. |

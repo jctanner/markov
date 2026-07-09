@@ -35,6 +35,47 @@ workflows:
 	}
 }
 
+func TestParseFileAllowsK8sJobWaitPrimitiveAndStepType(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "workflow.yaml")
+	writeFile(t, path, `
+entrypoint: main
+step_types:
+  agent_job_wait:
+    base: k8s_job_wait
+    params:
+      namespace: ai-pipeline
+workflows:
+  - name: main
+    steps:
+      - name: wait_direct
+        type: k8s_job_wait
+        params:
+          job_name: existing-job
+      - name: wait_custom
+        type: agent_job_wait
+        params:
+          job_name: other-job
+`)
+
+	wf, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("ParseFile() error = %v", err)
+	}
+
+	step := wf.Workflows[0].Steps[1]
+	base, params := wf.ResolveStepType(&step)
+	if base != "k8s_job_wait" {
+		t.Fatalf("base = %q, want k8s_job_wait", base)
+	}
+	if params["namespace"] != "ai-pipeline" {
+		t.Fatalf("namespace = %v, want ai-pipeline", params["namespace"])
+	}
+	if params["job_name"] != "other-job" {
+		t.Fatalf("job_name = %v, want other-job", params["job_name"])
+	}
+}
+
 func TestParseDirMergesDirectoryWorkflow(t *testing.T) {
 	dir := makeDirectoryWorkflow(t)
 

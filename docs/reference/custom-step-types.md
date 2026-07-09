@@ -5,7 +5,7 @@ Custom step types let you define reusable abstractions on top of [built-in primi
 
 ## What They Are
 
-A custom step type wraps a primitive (such as `k8s_job`, `http_request`, or `shell_exec`) with fixed defaults and pre-configured parameters. This eliminates repetition when the same image, secrets, volumes, or other parameters are shared across many steps.
+A custom step type wraps a primitive (such as `k8s_job`, `k8s_job_wait`, `http_request`, or `shell_exec`) with fixed defaults and pre-configured parameters. This eliminates repetition when the same image, secrets, volumes, or other parameters are shared across many steps.
 
 When a step references a custom type, the engine resolves it to its base primitive and merges all parameter layers before execution.
 
@@ -13,7 +13,7 @@ When a step references a custom type, the engine resolves it to its base primiti
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `base` | string | yes | Must be a primitive type: `k8s_job`, `http_request`, `shell_exec`, `gate`, `load_artifact`, `set_fact`, `assert`, or `llm_invoke` |
+| `base` | string | yes | Must be a primitive type: `k8s_job`, `k8s_job_wait`, `http_request`, `shell_exec`, `gate`, `load_artifact`, `set_fact`, `assert`, or `llm_invoke` |
 | `description` | string | no | Human-readable description of the step type |
 | `job` | map[string]any | no | Base parameters, typically the core spec (image, command for `k8s_job`; base_url for `http_request`) |
 | `defaults` | map[string]any | no | Default parameter values that override `job` fields |

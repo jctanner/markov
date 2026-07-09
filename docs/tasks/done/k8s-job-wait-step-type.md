@@ -2,7 +2,7 @@
 
 ## Status
 
-Pending
+Done
 
 ## Summary
 
@@ -79,3 +79,17 @@ result:
 ```
 
 This replaces the current 20-line `shell_exec` curl polling loop with a single declarative step that also captures pod logs.
+
+## Implementation
+
+- Added `k8s_job_wait` as a primitive step type.
+- Registered the executor when a Kubernetes client is available.
+- Added support for custom step types using `base: k8s_job_wait`.
+- Reused the Kubernetes Job polling and pod log capture path from `k8s_job`.
+- Added result fields: `job_name`, `namespace`, `status`, and optional `logs`.
+- Added docs in the step type reference, workflow file reference, custom step type reference, CLI reference, and variables/context reference.
+
+## Verification
+
+- `GOCACHE=/tmp/go-build go test ./pkg/executor ./pkg/parser ./cmd/markov`
+- `git diff --check`
