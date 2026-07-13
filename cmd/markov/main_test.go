@@ -3,10 +3,39 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/spf13/cobra"
 )
+
+func TestParseVarFlagsCoercesNativeValues(t *testing.T) {
+	got := parseVarFlags([]string{
+		"enabled=true",
+		"disabled=false",
+		"count=42",
+		"ratio=2.5",
+		`items=["alpha","bravo"]`,
+		`config={"mode":"safe"}`,
+		"environment=prod",
+		"empty=",
+		"token=prefix=suffix",
+	})
+	want := map[string]any{
+		"enabled":     true,
+		"disabled":    false,
+		"count":       42,
+		"ratio":       2.5,
+		"items":       []any{"alpha", "bravo"},
+		"config":      map[string]any{"mode": "safe"},
+		"environment": "prod",
+		"empty":       "",
+		"token":       "prefix=suffix",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parseVarFlags() = %#v, want %#v", got, want)
+	}
+}
 
 func TestDefaultStateStorePath_OutOfCluster(t *testing.T) {
 	t.Setenv(stateStoreEnv, "")

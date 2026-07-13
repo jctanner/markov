@@ -18,3 +18,19 @@ Next:
 
 - Directory workflow support is implemented and verified with focused tests.
 - Full `go test ./...` still cannot complete in this sandbox because callback tests require local TCP listeners.
+
+## 2026-07-13
+
+Agent: codex
+
+Fixed:
+
+- CLI `--var` values now use canonical Markov type coercion, preventing the
+  string `"false"` from evaluating truthy in `when` conditions.
+
+Verified:
+
+- Repository `make test` passed with callback listener access.
+- Platform `make host-rebuild-markov` imported the rebuilt image into k3s.
+- Live run `markov-run-622d5874` skipped `main.run_pipeline` for
+  `--var run_pipeline=false` and created no pipeline child steps.

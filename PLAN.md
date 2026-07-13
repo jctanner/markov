@@ -32,6 +32,7 @@
 ## Fixed Bugs
 
 - [Template map values render as Go strings in HTTP bodies](docs/bugs/fixed/template-map-values-render-as-go-strings.md)
+- [CLI `--var false` remains a truthy string](docs/bugs/fixed/cli-var-false-remains-truthy-string.md)
 
 ## Decisions
 

@@ -174,3 +174,10 @@ func coerceString(s string) any {
 	}
 	return s
 }
+
+// CoerceString converts a CLI or rendered string to Markov's canonical native
+// value representation. It preserves ordinary strings while recognizing
+// booleans, numbers, and JSON arrays or objects.
+func CoerceString(s string) any {
+	return coerceString(s)
+}

@@ -371,7 +371,7 @@ func parseVarFlags(vars []string) map[string]any {
 	for _, v := range vars {
 		parts := strings.SplitN(v, "=", 2)
 		if len(parts) == 2 {
-			result[parts[0]] = parts[1]
+			result[parts[0]] = engine.CoerceString(parts[1])
 		}
 	}
 	return result

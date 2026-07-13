@@ -37,6 +37,24 @@ workflows:
 markov run workflow.yaml --var environment=prod
 ```
 
+CLI override values use Markov's normal string coercion before entering the
+context. Boolean literals become booleans, numbers become numeric values, JSON
+arrays and objects become native structured values, and other values remain
+strings:
+
+| CLI value | Context value |
+|---|---|
+| `--var enabled=true` | `true` (bool) |
+| `--var enabled=false` | `false` (bool) |
+| `--var retries=3` | `3` (int) |
+| `--var threshold=0.75` | `0.75` (float) |
+| `--var 'targets=["api","worker"]'` | list |
+| `--var environment=prod` | `"prod"` (string) |
+
+This means `--var run_pipeline=false` correctly skips a step guarded by
+`when: "run_pipeline"`; the non-empty string `"false"` is not placed in the
+context.
+
 ## Setting Variables at Runtime
 
 There are three mechanisms for setting context variables during execution.
