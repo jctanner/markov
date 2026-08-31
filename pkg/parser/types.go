@@ -8,6 +8,9 @@ type WorkflowFile struct {
 	Rules      []Rule              `yaml:"rules"`
 	StepTypes  map[string]StepType `yaml:"step_types"`
 	Workflows  []Workflow          `yaml:"workflows"`
+	// ScriptDir is the directory used as the base for script_exec path values.
+	// It is set by the parser and is not part of the workflow YAML schema.
+	ScriptDir string `yaml:"-"`
 }
 
 type Rule struct {

@@ -65,6 +65,7 @@ The files map directly to the single-file schema:
 | `rules.yaml` | list | Rule definitions, without a wrapping `rules:` key |
 | `step_types.yaml` | map | Step type definitions, without a wrapping `step_types:` key |
 | `step_types/*.yaml` | map | Additional step type definition maps, merged by filename |
+| `scripts/` | directory | Scripts referenced by `script_exec` `path` values |
 | `workflows/*.yaml` | map | One workflow object per file, without a wrapping `workflows:` key |
 
 In directory mode, workflow filenames are only organizational. Markov loads every `workflows/*.yaml` file and identifies workflows by each file's `name:` field. The `meta.yaml` `entrypoint` and the CLI `--workflow` override both refer to that workflow name, not to the YAML filename. For example, `markov run pipeline/ --workflow deploy` runs the workflow object whose `name` is `deploy`; it does not require or specially search for `workflows/deploy.yaml`.
@@ -340,6 +341,7 @@ These are the built-in step types available in every workflow file.
 | `k8s_job_wait` | Wait for an existing Kubernetes Job by name. Requires a configured K8s client. |
 | `http_request` | Make an HTTP request. |
 | `shell_exec` | Execute a shell command on the local machine. |
+| `script_exec` | Run an inline script or a script from the workflow `scripts/` directory on the local machine. |
 | `gate` | Evaluate named rules against the current context. Controls flow based on rule outcomes. |
 | `load_artifact` | Load file artifacts into the variable context. |
 | `set_fact` | Set variables in the current workflow context. |

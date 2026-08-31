@@ -24,7 +24,7 @@ New to markov? Start here:
 Complete, field-by-field documentation for the markov YAML DSL:
 
 - [Workflow File Schema](reference/workflow-file.md) — top-level fields, workflow, step, rule, artifact, and step_type schemas
-- [Step Types](reference/step-types.md) — all built-in types: shell_exec, k8s_job, http_request, gate, set_fact, load_artifact, assert
+- [Step Types](reference/step-types.md) — all built-in types: shell_exec, script_exec, k8s_job, http_request, gate, set_fact, load_artifact, assert
 - [Custom Step Types](reference/custom-step-types.md) — defining reusable step types with base/job/defaults/params
 - [Template Engine](reference/template-engine.md) — Pongo2 templates, filters, expressions, and type coercion
 - [Rule Engine](reference/rule-engine.md) — rules, gates, condition syntax, FactStore, and Grule evaluation

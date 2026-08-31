@@ -593,6 +593,9 @@ func (e *Engine) executeStepWithStateName(ctx context.Context, runID string, wor
 	if err != nil {
 		return e.failStep(ctx, runID, workflowName, stateStepName, base, now, fmt.Errorf("rendering params: %w", err))
 	}
+	if base == "script_exec" {
+		renderedParams["_script_dir"] = e.file.ScriptDir
+	}
 
 	if base == "k8s_job" {
 		e.injectJobMeta(renderedParams, runID, workflowName, step.Name)

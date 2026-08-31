@@ -1,7 +1,7 @@
 {% raw %}
 # Built-in Step Types
 
-Markov ships with nine primitive step types. Every step in a workflow must resolve to one of these primitives, either directly or through a [custom step type](custom-step-types.md).
+Markov ships with ten primitive step types. Every step in a workflow must resolve to one of these primitives, either directly or through a [custom step type](custom-step-types.md).
 
 All step types support these common fields:
 
@@ -68,6 +68,74 @@ Piped command with registered output:
   type: shell_exec
   params:
     command: "echo 'Found {{ pod_count.stdout | trim }} pods'"
+```
+
+---
+
+## script_exec
+
+Runs a deterministic script on the Markov runner host through an explicit interpreter. Unlike `shell_exec`, Markov does not build a `bash -c` command: the interpreter, script arguments, and environment variables are passed directly to the process.
+
+Provide exactly one script source:
+
+- `content` writes an inline script body to a temporary file for this execution.
+- `path` reads a script from the workflow's `scripts/` directory. The value must be relative to that directory; paths that escape it are rejected. For a directory workflow, use `<workflow-root>/scripts/`; for a single-file workflow, use a sibling `scripts/` directory.
+
+`script_exec` runs on the runner host. To run a script in a container, package it in the image (or mount it) and use `k8s_job`.
+
+### Parameters
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `interpreter` | string | yes | Interpreter executable, such as `python3`, `bash`, or `sh`. |
+| `content` | string | one of `content`/`path` | Inline script body. |
+| `path` | string | one of `content`/`path` | Script path relative to the workflow `scripts/` directory. |
+| `args` | string[] | no | Arguments passed to the script after its path. |
+| `env` | map[string]string | no | Environment variables added to or overriding the runner environment. |
+
+### Output Variables
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `stdout` | string | Standard output from the script. |
+| `stderr` | string | Standard error from the script. |
+| `exit_code` | int | Process exit code. |
+
+### Examples
+
+An inline Python script:
+
+```yaml
+- name: print-issue
+  type: script_exec
+  params:
+    interpreter: python3
+    content: |
+      import os
+      import sys
+      print(f"{os.environ['ISSUE']}: {sys.argv[1]}")
+    args: ["review"]
+    env:
+      ISSUE: "RFE-123"
+```
+
+A script stored alongside a directory workflow:
+
+```text
+my-workflow/
+  scripts/
+    reconcile.py
+  workflows/
+    main.yaml
+```
+
+```yaml
+- name: reconcile
+  type: script_exec
+  params:
+    interpreter: python3
+    path: reconcile.py
+    args: ["--dry-run"]
 ```
 
 ---

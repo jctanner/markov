@@ -76,6 +76,46 @@ workflows:
 	}
 }
 
+func TestParseFileAllowsScriptExecAndSetsScriptsDirectory(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "workflow.yaml")
+	writeFile(t, path, `
+entrypoint: main
+step_types:
+  python_script:
+    base: script_exec
+    params:
+      interpreter: python3
+workflows:
+  - name: main
+    steps:
+      - name: direct
+        type: script_exec
+        params:
+          interpreter: sh
+          path: hello.sh
+      - name: custom
+        type: python_script
+        params:
+          path: hello.py
+`)
+
+	wf, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("ParseFile() error = %v", err)
+	}
+	if got, want := wf.ScriptDir, filepath.Join(dir, "scripts"); got != want {
+		t.Fatalf("ScriptDir = %q, want %q", got, want)
+	}
+	base, params := wf.ResolveStepType(&wf.Workflows[0].Steps[1])
+	if base != "script_exec" {
+		t.Fatalf("base = %q, want script_exec", base)
+	}
+	if got, want := params["interpreter"], "python3"; got != want {
+		t.Fatalf("interpreter = %v, want %q", got, want)
+	}
+}
+
 func TestParseDirMergesDirectoryWorkflow(t *testing.T) {
 	dir := makeDirectoryWorkflow(t)
 
@@ -89,6 +129,9 @@ func TestParseDirMergesDirectoryWorkflow(t *testing.T) {
 	}
 	if wf.Namespace != "markov-test" {
 		t.Fatalf("Namespace = %q, want markov-test", wf.Namespace)
+	}
+	if got, want := wf.ScriptDir, filepath.Join(dir, "scripts"); got != want {
+		t.Fatalf("ScriptDir = %q, want %q", got, want)
 	}
 	if wf.Forks != 2 {
 		t.Fatalf("Forks = %d, want 2", wf.Forks)

@@ -22,11 +22,12 @@ func ParseFile(path string) (*WorkflowFile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading workflow file: %w", err)
 	}
-	return Parse(data)
+	return parse(data, filepath.Join(filepath.Dir(path), "scripts"))
 }
 
 func ParseDir(path string) (*WorkflowFile, error) {
 	var wf WorkflowFile
+	wf.ScriptDir = filepath.Join(path, "scripts")
 
 	metaPath := filepath.Join(path, "meta.yaml")
 	var meta struct {
@@ -96,10 +97,15 @@ func ParseDir(path string) (*WorkflowFile, error) {
 }
 
 func Parse(data []byte) (*WorkflowFile, error) {
+	return parse(data, "scripts")
+}
+
+func parse(data []byte, scriptDir string) (*WorkflowFile, error) {
 	var wf WorkflowFile
 	if err := yaml.Unmarshal(data, &wf); err != nil {
 		return nil, fmt.Errorf("parsing workflow YAML: %w", err)
 	}
+	wf.ScriptDir = scriptDir
 	if err := loadRuleFiles(&wf, "."); err != nil {
 		return nil, err
 	}
@@ -289,6 +295,7 @@ var primitives = map[string]bool{
 	"http_request":  true,
 	"llm_invoke":    true,
 	"shell_exec":    true,
+	"script_exec":   true,
 	"gate":          true,
 	"load_artifact": true,
 	"set_fact":      true,

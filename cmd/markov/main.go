@@ -400,6 +400,7 @@ func resolveNamespace(wfNamespace, flagNS string) string {
 func buildExecutors(wf *parser.WorkflowFile) (map[string]executor.Executor, error) {
 	executors := map[string]executor.Executor{
 		"shell_exec":   executor.NewShellExec(),
+		"script_exec":  executor.NewScriptExec(),
 		"http_request": executor.NewHTTPRequest(),
 	}
 
