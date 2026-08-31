@@ -1,7 +1,7 @@
 {% raw %}
 # Built-in Step Types
 
-Markov ships with ten primitive step types. Every step in a workflow must resolve to one of these primitives, either directly or through a [custom step type](custom-step-types.md).
+Markov ships with eleven primitive step types. Every step in a workflow must resolve to one of these primitives, either directly or through a [custom step type](custom-step-types.md).
 
 All step types support these common fields:
 
@@ -137,6 +137,58 @@ my-workflow/
     path: reconcile.py
     args: ["--dry-run"]
 ```
+
+---
+
+## prompt
+
+Displays a prompt and reads one line of input from the Markov runner's interactive terminal. Use it for local, synchronous decisions; it is not suitable for Kubernetes Jobs, CI, or other non-interactive runners. For a durable approval that survives process exit, use a gate with `action: pause` and resume the run later.
+
+The response is available through `register` as `value`.
+
+### Parameters
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `message` | string | yes | Text displayed before the input prompt. |
+| `choices` | string[] | no | Allowed responses. Input must match one of these strings exactly unless `case_insensitive` is true. |
+| `default` | string | no | Value selected when the user presses Enter. When choices are set, it must be one of them. |
+| `case_insensitive` | bool | no | `false` | When `true`, match `choices` without regard to case and return the configured choice spelling. |
+
+### Output Variables
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `value` | string | The entered response, or `default` when Enter was pressed. |
+
+### Failure Conditions
+
+- The runner does not have an interactive terminal.
+- `message` is missing.
+- The input stream closes before a valid response is received.
+
+Empty or invalid responses are explained and re-prompted in the terminal; they do not fail the workflow.
+
+### Example
+
+```yaml
+- name: release_decision
+  type: prompt
+  params:
+    message: "Approve release?"
+    choices: ["yes", "no"]
+    default: "no"
+    case_insensitive: true
+  register: decision
+
+- name: release
+  type: shell_exec
+  when: "decision.value == 'yes'"
+  params:
+    command: "./release.sh"
+```
+
+See [the complete interactive example](../../examples/prompt.yaml).
 
 ---
 
@@ -556,7 +608,8 @@ Evaluates named rules against the workflow context using the Grule rule engine. 
 2. Rules fire in salience order. When a rule fires and sets facts, remaining rules are re-evaluated against the updated context.
 3. The highest-salience fired rule determines the gate action.
 4. `set_fact` values from all fired rules are merged back into the workflow context, making them available to downstream steps.
-5. `pause` is logged but not yet implemented -- execution continues as if `continue` was returned.
+5. `pause` persists a gate receipt, marks the step and run as `paused`, and stops execution. Resume the run with at least one `--var key=value` override; the paused gate is evaluated again with that input.
+6. `skip` is recorded as the gate action, but does not yet change engine control flow.
 
 ### Scoping
 

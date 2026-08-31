@@ -116,6 +116,25 @@ workflows:
 	}
 }
 
+func TestParseFileAllowsPromptPrimitive(t *testing.T) {
+	wf, err := Parse([]byte(`
+entrypoint: main
+workflows:
+  - name: main
+    steps:
+      - name: approval
+        type: prompt
+        params:
+          message: "Approve?"
+`))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if got := wf.Workflows[0].Steps[0].Type; got != "prompt" {
+		t.Fatalf("step type = %q, want prompt", got)
+	}
+}
+
 func TestParseDirMergesDirectoryWorkflow(t *testing.T) {
 	dir := makeDirectoryWorkflow(t)
 

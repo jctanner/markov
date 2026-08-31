@@ -1,0 +1,42 @@
+---
+# Durable human-approval gate.
+#
+# First run:    markov run examples/pause-resume.yaml --state-store /tmp/markov-pause-demo.db
+# Inspect:      markov status <run-id> --steps --state-store /tmp/markov-pause-demo.db
+# Approve:      markov resume <run-id> --var approved=true --state-store /tmp/markov-pause-demo.db
+
+entrypoint: main
+
+vars:
+  approved: false
+
+rules:
+  - name: wait_for_approval
+    description: "Pause until an operator explicitly approves this release"
+    salience: 100
+    when: "approved != true"
+    action: pause
+    set_fact:
+      approval_state: "awaiting approval"
+
+  - name: approval_received
+    description: "Allow release after an explicit resume override"
+    salience: 100
+    when: "approved == true"
+    action: continue
+    set_fact:
+      approval_state: "approved"
+
+workflows:
+  - name: main
+    steps:
+      - name: approval_gate
+        type: gate
+        rules:
+          - wait_for_approval
+          - approval_received
+
+      - name: release
+        type: shell_exec
+        params:
+          command: "echo 'release approved and running'"

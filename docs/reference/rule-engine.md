@@ -45,8 +45,24 @@ rules:
 | Action | Description |
 |---|---|
 | `continue` | Proceed with the workflow (default). |
-| `skip` | Skip remaining steps. |
-| `pause` | Pause execution (logged but not yet fully implemented; currently continues). |
+| `skip` | Record a skip decision. Engine control-flow support is not yet implemented. |
+| `pause` | Persist a gate receipt and stop the run. Resume it with explicit `--var` input. |
+
+### Pausing for approval
+
+A `pause` action creates a `paused` run and a `paused` gate-step record. The gate receipt contains the selected action, fired rules, and facts. Inspect it before continuing:
+
+```bash
+markov status <run-id> --steps
+```
+
+Paused runs do not continue automatically. Resume requires at least one explicit variable override, which is applied before the paused gate is evaluated again:
+
+```bash
+markov resume <run-id> --var approved=true
+```
+
+Design the gate rules so that the supplied input changes the decision from `pause` to `continue` (or another intended action).
 
 ## Rule Condition Syntax
 

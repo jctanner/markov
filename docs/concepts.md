@@ -19,6 +19,7 @@ Every step has a `type` that determines what it does. Markov provides these prim
 |------|---------|
 | `shell_exec` | Run a shell command |
 | `script_exec` | Run an inline or repository script through an interpreter |
+| `prompt` | Read local interactive terminal input |
 | `k8s_job` | Create and run a Kubernetes Job |
 | `http_request` | Make an HTTP request |
 | `gate` | Evaluate rules and control flow |
@@ -56,11 +57,11 @@ A step can invoke another workflow by name using the `workflow` field instead of
 
 ## Recursive Workflows
 
-Workflows can call themselves. Combined with gate steps, this enables looping: a gate evaluates rules against the current state and decides whether to continue, skip, or pause. This follows the Markov chain principle — each iteration's next move depends only on the current state.
+Workflows can call themselves. Combined with gate steps, this enables looping: a gate evaluates rules against the current state and decides whether to continue or pause for explicit resume input. This follows the Markov chain principle — each iteration's next move depends only on the current state.
 
 ## Rule Engine and Gates
 
-Rules are defined at the top of the file and evaluated by gate steps. Each rule has a condition (`when`), a priority (`salience`), an action (`continue`, `skip`, or `pause`), and optional side effects (`set_fact`). The Grule rule engine evaluates rules with forward chaining — when a rule fires and sets facts, remaining rules re-evaluate against the updated state.
+Rules are defined at the top of the file and evaluated by gate steps. Each rule has a condition (`when`), a priority (`salience`), an action (`continue`, `skip`, or `pause`), and optional side effects (`set_fact`). `pause` stops the run durably; `skip` is currently recorded but does not yet alter engine control flow. The Grule rule engine evaluates rules with forward chaining — when a rule fires and sets facts, remaining rules re-evaluate against the updated state.
 
 ## Checkpoint and Resume
 

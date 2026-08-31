@@ -11,6 +11,7 @@ type RunStatus string
 
 const (
 	RunRunning   RunStatus = "running"
+	RunPaused    RunStatus = "paused"
 	RunCompleted RunStatus = "completed"
 	RunFailed    RunStatus = "failed"
 )
@@ -20,6 +21,7 @@ type StepStatus string
 const (
 	StepPending   StepStatus = "pending"
 	StepRunning   StepStatus = "running"
+	StepPaused    StepStatus = "paused"
 	StepCompleted StepStatus = "completed"
 	StepFailed    StepStatus = "failed"
 	StepSkipped   StepStatus = "skipped"

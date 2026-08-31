@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"regexp"
@@ -35,6 +36,30 @@ type Engine struct {
 	RunID      string
 	SourcePath string
 	callbacks  []callback.Callback
+}
+
+// PauseError signals that a gate intentionally stopped the workflow. It is
+// distinct from a step failure so callers can preserve a resumable paused run.
+type PauseError struct {
+	WorkflowName string
+	StepName     string
+	FiredRules   []string
+	Facts        map[string]any
+}
+
+func (e *PauseError) Error() string {
+	return fmt.Sprintf("paused by gate step %q", e.StepName)
+}
+
+func pauseError(err error) (*PauseError, bool) {
+	var paused *PauseError
+	return paused, errors.As(err, &paused)
+}
+
+// IsPaused reports whether execution stopped at a gate rather than failed.
+func IsPaused(err error) bool {
+	_, ok := pauseError(err)
+	return ok
 }
 
 func New(file *parser.WorkflowFile, store state.Store, executors map[string]executor.Executor) *Engine {
@@ -132,9 +157,23 @@ func (e *Engine) Run(ctx context.Context, workflowName string, vars map[string]a
 	err := e.executeWorkflow(ctx, runID, wf, runCtx)
 
 	now := time.Now()
-	run.CompletedAt = &now
 	duration := now.Sub(run.StartedAt).Seconds()
-	if err != nil {
+	if paused, ok := pauseError(err); ok {
+		run.Status = state.RunPaused
+		run.CompletedAt = nil
+		log.Printf("[run:%s] workflow %q paused at gate %q", runID, workflowName, paused.StepName)
+		e.fireEvent(func(cb callback.Callback) error {
+			return cb.OnRunPaused(callback.RunPausedEvent{
+				EventHeader:  callback.EventHeader{Timestamp: now, RunID: runID, EventType: "run_paused"},
+				WorkflowName: workflowName,
+				StepName:     paused.StepName,
+				FiredRules:   paused.FiredRules,
+				Facts:        paused.Facts,
+				Duration:     duration,
+			})
+		})
+	} else if err != nil {
+		run.CompletedAt = &now
 		run.Status = state.RunFailed
 		log.Printf("[run:%s] workflow %q failed: %v", runID, workflowName, err)
 		e.fireEvent(func(cb callback.Callback) error {
@@ -146,6 +185,7 @@ func (e *Engine) Run(ctx context.Context, workflowName string, vars map[string]a
 			})
 		})
 	} else {
+		run.CompletedAt = &now
 		run.Status = state.RunCompleted
 		log.Printf("[run:%s] workflow %q completed", runID, workflowName)
 		e.fireEvent(func(cb callback.Callback) error {
@@ -162,9 +202,22 @@ func (e *Engine) Run(ctx context.Context, workflowName string, vars map[string]a
 }
 
 func (e *Engine) Resume(ctx context.Context, runID string) error {
+	return e.ResumeWithVars(ctx, runID, nil)
+}
+
+// ResumeWithVars resumes a failed or paused run. Paused runs require at least
+// one explicit override so an operator records the input that releases the
+// gate instead of accidentally continuing it unchanged.
+func (e *Engine) ResumeWithVars(ctx context.Context, runID string, vars map[string]any) error {
 	run, err := e.store.GetRun(ctx, runID)
 	if err != nil {
 		return err
+	}
+	if run.Status != state.RunFailed && run.Status != state.RunPaused {
+		return fmt.Errorf("run %q has status %q; only failed or paused runs can be resumed", runID, run.Status)
+	}
+	if run.Status == state.RunPaused && len(vars) == 0 {
+		return fmt.Errorf("paused run %q requires at least one --var override to resume", runID)
 	}
 
 	wf := e.file.GetWorkflow(run.Entrypoint)
@@ -172,8 +225,15 @@ func (e *Engine) Resume(ctx context.Context, runID string) error {
 		return fmt.Errorf("workflow %q not found", run.Entrypoint)
 	}
 
-	var runCtx map[string]any
-	json.Unmarshal([]byte(run.VarsJSON), &runCtx)
+	var storedVars map[string]any
+	json.Unmarshal([]byte(run.VarsJSON), &storedVars)
+	if storedVars == nil {
+		storedVars = make(map[string]any)
+	}
+	runCtx := make(map[string]any, len(storedVars)+len(vars))
+	for k, v := range storedVars {
+		runCtx[k] = v
+	}
 
 	steps, err := e.store.GetSteps(ctx, runID)
 	if err != nil {
@@ -206,8 +266,15 @@ func (e *Engine) Resume(ctx context.Context, runID string) error {
 			}
 		}
 	}
+	for k, v := range vars {
+		storedVars[k] = v
+		runCtx[k] = v
+	}
+	varsJSON, _ := json.Marshal(storedVars)
+	run.VarsJSON = string(varsJSON)
 
 	run.Status = state.RunRunning
+	run.CompletedAt = nil
 	e.store.UpdateRun(ctx, run)
 
 	completedCount := 0
@@ -231,9 +298,22 @@ func (e *Engine) Resume(ctx context.Context, runID string) error {
 	err = e.executeWorkflow(ctx, runID, wf, runCtx)
 
 	now := time.Now()
-	run.CompletedAt = &now
 	duration := now.Sub(resumeStart).Seconds()
-	if err != nil {
+	if paused, ok := pauseError(err); ok {
+		run.Status = state.RunPaused
+		run.CompletedAt = nil
+		e.fireEvent(func(cb callback.Callback) error {
+			return cb.OnRunPaused(callback.RunPausedEvent{
+				EventHeader:  callback.EventHeader{Timestamp: now, RunID: runID, EventType: "run_paused"},
+				WorkflowName: run.Entrypoint,
+				StepName:     paused.StepName,
+				FiredRules:   paused.FiredRules,
+				Facts:        paused.Facts,
+				Duration:     duration,
+			})
+		})
+	} else if err != nil {
+		run.CompletedAt = &now
 		run.Status = state.RunFailed
 		e.fireEvent(func(cb callback.Callback) error {
 			return cb.OnRunFailed(callback.RunFailedEvent{
@@ -244,6 +324,7 @@ func (e *Engine) Resume(ctx context.Context, runID string) error {
 			})
 		})
 	} else {
+		run.CompletedAt = &now
 		run.Status = state.RunCompleted
 		e.fireEvent(func(cb callback.Callback) error {
 			return cb.OnRunCompleted(callback.RunCompletedEvent{
@@ -337,6 +418,9 @@ func (e *Engine) executeStepWithStateName(ctx context.Context, runID string, wor
 		err := e.executeForEach(ctx, runID, workflowName, step, runCtx)
 		feEnd := time.Now()
 		if err != nil {
+			if IsPaused(err) {
+				return err
+			}
 			e.fireEvent(func(cb callback.Callback) error {
 				return cb.OnStepFailed(callback.StepFailedEvent{
 					EventHeader:  callback.EventHeader{Timestamp: feEnd, RunID: runID, EventType: "step_failed"},
@@ -375,6 +459,9 @@ func (e *Engine) executeStepWithStateName(ctx context.Context, runID string, wor
 		err := e.executeSubWorkflow(ctx, runID, workflowName, step, runCtx)
 		swEnd := time.Now()
 		if err != nil {
+			if IsPaused(err) {
+				return err
+			}
 			e.fireEvent(func(cb callback.Callback) error {
 				return cb.OnStepFailed(callback.StepFailedEvent{
 					EventHeader:  callback.EventHeader{Timestamp: swEnd, RunID: runID, EventType: "step_failed"},
@@ -513,16 +600,29 @@ func (e *Engine) executeStepWithStateName(ctx context.Context, runID string, wor
 
 		log.Printf("[run:%s] gate %q: action=%s, fired=%v", runID, step.Name, result.Action, result.FiredRules)
 
-		if result.Action == "pause" {
-			log.Printf("[run:%s] gate %q requested pause (not yet implemented, continuing)", runID, step.Name)
-		}
-
 		outputJSON, _ := json.Marshal(map[string]any{
 			"action":      result.Action,
 			"fired_rules": result.FiredRules,
 			"facts":       result.Facts,
 		})
 		completed := time.Now()
+		if result.Action == "pause" {
+			e.store.SaveStep(ctx, &state.StepResult{
+				RunID:        runID,
+				WorkflowName: workflowName,
+				StepName:     stateStepName,
+				Status:       state.StepPaused,
+				OutputJSON:   string(outputJSON),
+				StartedAt:    &now,
+				CompletedAt:  &completed,
+			})
+			return &PauseError{
+				WorkflowName: workflowName,
+				StepName:     step.Name,
+				FiredRules:   result.FiredRules,
+				Facts:        result.Facts,
+			}
+		}
 		e.store.SaveStep(ctx, &state.StepResult{
 			RunID:        runID,
 			WorkflowName: workflowName,
@@ -766,9 +866,24 @@ func (e *Engine) executeSubWorkflow(ctx context.Context, runID string, workflowN
 	err := e.executeWorkflow(ctx, subRunID, wf, subVars)
 
 	subNow := time.Now()
-	subRun.CompletedAt = &subNow
 	duration := subNow.Sub(subRun.StartedAt).Seconds()
-	if err != nil {
+	if paused, ok := pauseError(err); ok {
+		subRun.Status = state.RunPaused
+		subRun.CompletedAt = nil
+		e.store.UpdateRun(ctx, subRun)
+		e.fireEvent(func(cb callback.Callback) error {
+			return cb.OnRunPaused(callback.RunPausedEvent{
+				EventHeader:  callback.EventHeader{Timestamp: subNow, RunID: subRunID, EventType: "run_paused"},
+				WorkflowName: step.Workflow,
+				StepName:     paused.StepName,
+				FiredRules:   paused.FiredRules,
+				Facts:        paused.Facts,
+				Duration:     duration,
+			})
+		})
+		return err
+	} else if err != nil {
+		subRun.CompletedAt = &subNow
 		subRun.Status = state.RunFailed
 		e.store.UpdateRun(ctx, subRun)
 		e.fireEvent(func(cb callback.Callback) error {
@@ -783,6 +898,7 @@ func (e *Engine) executeSubWorkflow(ctx context.Context, runID string, workflowN
 		})
 		return err
 	}
+	subRun.CompletedAt = &subNow
 	subRun.Status = state.RunCompleted
 	e.store.UpdateRun(ctx, subRun)
 
@@ -932,9 +1048,23 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 				err := e.executeWorkflow(ctx, subRunID, wf, subVars)
 
 				feNow := time.Now()
-				subRun.CompletedAt = &feNow
 				feDuration := feNow.Sub(subRun.StartedAt).Seconds()
-				if err != nil {
+				if paused, ok := pauseError(err); ok {
+					subRun.Status = state.RunPaused
+					subRun.CompletedAt = nil
+					errOnce.Do(func() { firstErr = err })
+					e.fireEvent(func(cb callback.Callback) error {
+						return cb.OnRunPaused(callback.RunPausedEvent{
+							EventHeader:  callback.EventHeader{Timestamp: feNow, RunID: subRunID, EventType: "run_paused"},
+							WorkflowName: step.Workflow,
+							StepName:     paused.StepName,
+							FiredRules:   paused.FiredRules,
+							Facts:        paused.Facts,
+							Duration:     feDuration,
+						})
+					})
+				} else if err != nil {
+					subRun.CompletedAt = &feNow
 					subRun.Status = state.RunFailed
 					errOnce.Do(func() { firstErr = err })
 					e.fireEvent(func(cb callback.Callback) error {
@@ -949,6 +1079,7 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 						})
 					})
 				} else {
+					subRun.CompletedAt = &feNow
 					subRun.Status = state.RunCompleted
 					e.fireEvent(func(cb callback.Callback) error {
 						return cb.OnSubRunCompleted(callback.SubRunCompletedEvent{

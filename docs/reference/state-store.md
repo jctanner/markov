@@ -66,13 +66,13 @@ Recommended production practice:
 | `run_id` | TEXT | PRIMARY KEY | Unique run identifier (UUID prefix or `{parentRunID}-{stepName}-{key}`) |
 | `workflow_file` | TEXT | NOT NULL | Source YAML file path |
 | `entrypoint` | TEXT | NOT NULL | Workflow name that was executed |
-| `status` | TEXT | NOT NULL | `running`, `completed`, or `failed` |
+| `status` | TEXT | NOT NULL | `running`, `paused`, `completed`, or `failed` |
 | `vars_json` | TEXT | NOT NULL, DEFAULT '{}' | Serialized run context variables |
 | `parent_run_id` | TEXT | NULL | Set for sub-workflow and for_each runs |
 | `parent_step` | TEXT | NULL | Step name that spawned this sub-run |
 | `for_each_key` | TEXT | NULL | Iteration key for for_each sub-runs |
 | `started_at` | TIMESTAMP | NOT NULL | When the run began |
-| `completed_at` | TIMESTAMP | NULL | When the run finished (NULL while running) |
+| `completed_at` | TIMESTAMP | NULL | When the run finished (NULL while running or paused) |
 
 ### steps table
 
@@ -81,7 +81,7 @@ Recommended production practice:
 | `run_id` | TEXT | NOT NULL | Parent run identifier |
 | `workflow_name` | TEXT | NOT NULL | Workflow containing this step |
 | `step_name` | TEXT | NOT NULL | Step name |
-| `status` | TEXT | NOT NULL | `pending`, `running`, `completed`, `failed`, or `skipped` |
+| `status` | TEXT | NOT NULL | `pending`, `running`, `paused`, `completed`, `failed`, or `skipped` |
 | `output_json` | TEXT | NULL | Step output as serialized JSON |
 | `artifacts_json` | TEXT | NULL | Artifact data as serialized JSON |
 | `error` | TEXT | NULL | Error message if step failed |
@@ -97,6 +97,7 @@ Primary key: `(run_id, workflow_name, step_name)`
 ```
 running --> completed
         \-> failed
+        \-> paused --> running
 ```
 
 ### Step statuses
@@ -105,13 +106,14 @@ running --> completed
 pending --> running --> completed
                     \-> failed
                     \-> skipped
+                    \-> paused --> running
 ```
 
 A step is `skipped` when its `when` condition evaluates to false.
 
 ## Resume flow
 
-Resume picks up a failed run and re-executes it, skipping already-completed steps.
+Resume picks up a failed or paused run and re-executes it, skipping already-completed steps. Paused runs require explicit variable input (`markov resume <run_id> --var key=value`).
 
 ```
 markov resume <run_id>
@@ -130,7 +132,7 @@ markov resume <run_id>
    | Steps with artifacts | Restore full step data to `ctx[stepname]` |
    | Steps with output | Restore output map to `ctx[stepname]` |
 
-4. **Mark run as "running"** again.
+4. **Apply resume overrides** to the context (required for paused runs), then mark the run as `running` again.
 5. **Fire `run_resumed` event** with completed/remaining step counts.
 6. **Continue execution** -- `executeWorkflow` runs all steps in order; `executeStep` skips already-completed steps.
 

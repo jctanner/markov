@@ -1,0 +1,29 @@
+---
+# Run this example from an interactive terminal:
+#   bin/markov run examples/prompt.yaml
+
+entrypoint: main
+
+workflows:
+  - name: main
+    steps:
+      - name: release_decision
+        type: prompt
+        params:
+          message: "Approve release?"
+          choices: ["yes", "no"]
+          default: "no"
+          case_insensitive: true
+        register: decision
+
+      - name: release
+        type: shell_exec
+        when: "decision.value == 'yes'"
+        params:
+          command: "echo 'release approved and running'"
+
+      - name: declined
+        type: shell_exec
+        when: "decision.value == 'no'"
+        params:
+          command: "echo 'release declined'"

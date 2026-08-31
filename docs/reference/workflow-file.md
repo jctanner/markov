@@ -211,7 +211,7 @@ Rules are used by `gate` steps to make decisions based on the current variable c
 | Description | `description` | string | no | `""` | Human-readable description of the rule's purpose. |
 | Salience | `salience` | int | no | `0` | Priority. Higher values fire first. Use to control evaluation order when multiple rules may match. |
 | When | `when` | string | no | -- | Condition expression (Pongo2 syntax). The rule fires when this evaluates to true. |
-| Action | `action` | string | no | `"continue"` | What happens when the rule fires. One of: `continue` (proceed to next step), `skip` (skip subsequent steps until the next gate), `pause` (halt and wait for external input). |
+| Action | `action` | string | no | `"continue"` | What happens when the rule fires. `continue` proceeds; `pause` persists a receipt and stops until an explicit resume override; `skip` is recorded but its control flow is not yet implemented. |
 | SetFact | `set_fact` | map[string]any | no | `{}` | Variables to set in the workflow context when the rule fires. These become available to all downstream steps and rules. |
 
 ### Rule scoping
@@ -342,6 +342,7 @@ These are the built-in step types available in every workflow file.
 | `http_request` | Make an HTTP request. |
 | `shell_exec` | Execute a shell command on the local machine. |
 | `script_exec` | Run an inline script or a script from the workflow `scripts/` directory on the local machine. |
+| `prompt` | Read a response from an interactive terminal on the local machine. |
 | `gate` | Evaluate named rules against the current context. Controls flow based on rule outcomes. |
 | `load_artifact` | Load file artifacts into the variable context. |
 | `set_fact` | Set variables in the current workflow context. |

@@ -1,7 +1,7 @@
 {% raw %}
 # Resuming Workflows
 
-Markov checkpoints every run and step in a state store. SQLite is the default; Postgres can be selected with a `postgres://` or `postgresql://` DSN for durable shared state. When a run fails, `markov resume` reloads the original workflow source, rebuilds context from completed steps, skips completed work, and continues from the first incomplete or failed step.
+Markov checkpoints every run and step in a state store. SQLite is the default; Postgres can be selected with a `postgres://` or `postgresql://` DSN for durable shared state. When a run fails or pauses, `markov resume` reloads the original workflow source, rebuilds context from completed steps, skips completed work, and continues from the first incomplete, failed, or paused step.
 
 Use resume for failures that are safe to retry after an external fix: a missing secret, an unavailable API, a transient Kubernetes error, a bad variable value, or a workflow file bug that can be fixed without renaming completed steps.
 
@@ -35,6 +35,21 @@ markov run pipeline.yaml \
 markov resume demo-reset-001 --state-store /data/markov-state.db
 ```
 
+## Resuming a paused gate
+
+A gate with `action: pause` stops the workflow safely instead of falling through. The run and gate step are both recorded as `paused`; the gate step's output is an audit receipt containing its action, fired rules, and facts.
+
+Inspect the receipt, then resume with an explicit decision input. A paused run without `--var` input is rejected.
+
+```bash
+markov status <run-id> --steps --state-store /data/markov-state.db
+markov resume <run-id> --var approved=true --state-store /data/markov-state.db
+```
+
+The variable name is defined by the workflow's rules. For example, a rule can pause while `approved != true`; setting `approved=true` lets the gate re-evaluate to `continue`. The paused gate is intentionally re-executed, while preceding completed steps remain skipped.
+
+Run [the pause/resume example](../../examples/pause-resume.yaml) to see the complete workflow definition.
+
 For orchestrated Kubernetes runs, use Postgres through an environment variable or Secret-backed value:
 
 ```bash
@@ -66,7 +81,7 @@ On resume:
 - Completed `set_fact` steps replay their facts into the context.
 - Completed `gate` steps replay their output facts into the context.
 - Completed steps with `register` output restore that output for downstream templates.
-- Failed, running, missing, or pending steps run again.
+- Paused, failed, running, missing, or pending steps run again.
 - `when` conditions for non-completed steps are evaluated again against the replayed context.
 
 Resume is step-boundary recovery. If a step started an external side effect and then failed before Markov saved it as completed, that step will run again. Design steps that may be retried to be idempotent where possible.

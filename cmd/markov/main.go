@@ -94,11 +94,12 @@ func main() {
 
 	resumeCmd := &cobra.Command{
 		Use:   "resume <run_id>",
-		Short: "Resume a failed workflow run",
+		Short: "Resume a failed or paused workflow run",
 		Args:  cobra.ExactArgs(1),
 		RunE:  resumeWorkflow,
 	}
 	addStateStoreFlag(resumeCmd, stateStorePath)
+	resumeCmd.Flags().StringArrayVar(&flagVars, "var", nil, "Override vars before resuming (required for paused runs; key=value, repeatable)")
 
 	statusCmd := &cobra.Command{
 		Use:   "status <run_id>",
@@ -201,6 +202,10 @@ func runWorkflow(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	runID, err := eng.Run(ctx, flagWorkflow, vars)
 	if err != nil {
+		if engine.IsPaused(err) {
+			fmt.Printf("run %s paused; inspect its gate receipt and resume with --var approval input\n", runID)
+			return nil
+		}
 		fmt.Fprintf(os.Stderr, "run %s failed: %v\n", runID, err)
 		return err
 	}
@@ -234,7 +239,12 @@ func resumeWorkflow(cmd *cobra.Command, args []string) error {
 
 	eng := engine.New(wfFile, store, executors)
 	eng.SourcePath = run.WorkflowFile
-	return eng.Resume(ctx, args[0])
+	err = eng.ResumeWithVars(ctx, args[0], parseVarFlags(flagVars))
+	if engine.IsPaused(err) {
+		fmt.Printf("run %s remains paused; supply different --var approval input to resume\n", args[0])
+		return nil
+	}
+	return err
 }
 
 func showStatus(cmd *cobra.Command, args []string) error {
@@ -274,6 +284,9 @@ func showStatus(cmd *cobra.Command, args []string) error {
 			fmt.Printf("%-30s %-12s %s\n", s.StepName, s.Status, dur)
 			if s.Error != "" {
 				fmt.Printf("  error: %s\n", s.Error)
+			}
+			if s.Status == state.StepPaused && s.OutputJSON != "" {
+				fmt.Printf("  gate receipt: %s\n", s.OutputJSON)
 			}
 		}
 	}
@@ -401,6 +414,7 @@ func buildExecutors(wf *parser.WorkflowFile) (map[string]executor.Executor, erro
 	executors := map[string]executor.Executor{
 		"shell_exec":   executor.NewShellExec(),
 		"script_exec":  executor.NewScriptExec(),
+		"prompt":       executor.NewPrompt(),
 		"http_request": executor.NewHTTPRequest(),
 	}
 

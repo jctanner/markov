@@ -39,6 +39,7 @@ func (m *mockCallback) getEvents() []string {
 func (m *mockCallback) OnRunStarted(e callback.RunStartedEvent) error     { return m.record("run_started", e) }
 func (m *mockCallback) OnRunCompleted(e callback.RunCompletedEvent) error  { return m.record("run_completed", e) }
 func (m *mockCallback) OnRunFailed(e callback.RunFailedEvent) error       { return m.record("run_failed", e) }
+func (m *mockCallback) OnRunPaused(e callback.RunPausedEvent) error       { return m.record("run_paused", e) }
 func (m *mockCallback) OnRunResumed(e callback.RunResumedEvent) error     { return m.record("run_resumed", e) }
 func (m *mockCallback) OnStepStarted(e callback.StepStartedEvent) error   { return m.record("step_started", e) }
 func (m *mockCallback) OnStepCompleted(e callback.StepCompletedEvent) error { return m.record("step_completed", e) }
@@ -415,6 +416,7 @@ type errorCallback struct{}
 func (e *errorCallback) OnRunStarted(callback.RunStartedEvent) error        { return fmt.Errorf("cb error") }
 func (e *errorCallback) OnRunCompleted(callback.RunCompletedEvent) error    { return fmt.Errorf("cb error") }
 func (e *errorCallback) OnRunFailed(callback.RunFailedEvent) error          { return fmt.Errorf("cb error") }
+func (e *errorCallback) OnRunPaused(callback.RunPausedEvent) error          { return fmt.Errorf("cb error") }
 func (e *errorCallback) OnRunResumed(callback.RunResumedEvent) error        { return fmt.Errorf("cb error") }
 func (e *errorCallback) OnStepStarted(callback.StepStartedEvent) error      { return fmt.Errorf("cb error") }
 func (e *errorCallback) OnStepCompleted(callback.StepCompletedEvent) error  { return fmt.Errorf("cb error") }

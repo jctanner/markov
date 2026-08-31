@@ -142,6 +142,7 @@ func TestJSONLCallbackAllEventTypes(t *testing.T) {
 	cb.OnRunStarted(RunStartedEvent{EventHeader: hdr("run_started"), WorkflowName: "w"})
 	cb.OnRunCompleted(RunCompletedEvent{EventHeader: hdr("run_completed"), WorkflowName: "w"})
 	cb.OnRunFailed(RunFailedEvent{EventHeader: hdr("run_failed"), WorkflowName: "w", Error: "boom"})
+	cb.OnRunPaused(RunPausedEvent{EventHeader: hdr("run_paused"), WorkflowName: "w", StepName: "gate"})
 	cb.OnRunResumed(RunResumedEvent{EventHeader: hdr("run_resumed"), WorkflowName: "w"})
 	cb.OnStepStarted(StepStartedEvent{EventHeader: hdr("step_started"), StepName: "s"})
 	cb.OnStepCompleted(StepCompletedEvent{EventHeader: hdr("step_completed"), StepName: "s"})
@@ -164,8 +165,8 @@ func TestJSONLCallbackAllEventTypes(t *testing.T) {
 		}
 		count++
 	}
-	if count != 12 {
-		t.Errorf("got %d event lines, want 12", count)
+	if count != 13 {
+		t.Errorf("got %d event lines, want 13", count)
 	}
 }
 

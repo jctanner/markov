@@ -296,6 +296,7 @@ var primitives = map[string]bool{
 	"llm_invoke":    true,
 	"shell_exec":    true,
 	"script_exec":   true,
+	"prompt":        true,
 	"gate":          true,
 	"load_artifact": true,
 	"set_fact":      true,

@@ -17,7 +17,7 @@ import (
 
 type jsonCodec struct{}
 
-func (jsonCodec) Marshal(v any) ([]byte, error)     { return json.Marshal(v) }
+func (jsonCodec) Marshal(v any) ([]byte, error)      { return json.Marshal(v) }
 func (jsonCodec) Unmarshal(data []byte, v any) error { return json.Unmarshal(data, v) }
 func (jsonCodec) Name() string                       { return "json" }
 
@@ -91,6 +91,9 @@ func (g *GRPCCallback) OnRunCompleted(event RunCompletedEvent) error {
 	return g.sendEvent(event.EventType, event.RunID, event.Timestamp, event)
 }
 func (g *GRPCCallback) OnRunFailed(event RunFailedEvent) error {
+	return g.sendEvent(event.EventType, event.RunID, event.Timestamp, event)
+}
+func (g *GRPCCallback) OnRunPaused(event RunPausedEvent) error {
 	return g.sendEvent(event.EventType, event.RunID, event.Timestamp, event)
 }
 func (g *GRPCCallback) OnRunResumed(event RunResumedEvent) error {

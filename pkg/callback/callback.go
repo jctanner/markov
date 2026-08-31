@@ -30,6 +30,17 @@ type RunFailedEvent struct {
 	Duration     float64 `json:"duration_seconds"`
 }
 
+// RunPausedEvent records the gate receipt that stopped a workflow. A paused
+// run is neither completed nor failed and can be resumed with new input.
+type RunPausedEvent struct {
+	EventHeader
+	WorkflowName string         `json:"workflow_name"`
+	StepName     string         `json:"step_name"`
+	FiredRules   []string       `json:"fired_rules"`
+	Facts        map[string]any `json:"facts,omitempty"`
+	Duration     float64        `json:"duration_seconds"`
+}
+
 type RunResumedEvent struct {
 	EventHeader
 	WorkflowName   string `json:"workflow_name"`
@@ -122,6 +133,7 @@ type Callback interface {
 	OnRunStarted(event RunStartedEvent) error
 	OnRunCompleted(event RunCompletedEvent) error
 	OnRunFailed(event RunFailedEvent) error
+	OnRunPaused(event RunPausedEvent) error
 	OnRunResumed(event RunResumedEvent) error
 
 	OnStepStarted(event StepStartedEvent) error

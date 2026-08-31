@@ -43,7 +43,7 @@ Events are queued and sent asynchronously via a background goroutine.
 | Retries | 3 attempts with backoff: 0ms, 200ms, 400ms |
 | Timeout | 10s per request, 30s client timeout |
 | Retry logic | Retries on network errors and 5xx responses; does not retry 4xx |
-| Flush | `run_completed` and `run_failed` events block until sent |
+| Flush | `run_completed`, `run_failed`, and `run_paused` events block until sent |
 | Close | Drains the buffer with a 10s timeout |
 
 ```bash
@@ -93,6 +93,7 @@ All events share a common header:
 | `run_started` | Run begins | `workflow_name`, `workflow_file`, `vars`, `forks`, `namespace` |
 | `run_completed` | Run succeeds | `workflow_name`, `duration_seconds` |
 | `run_failed` | Run fails | `workflow_name`, `error`, `duration_seconds` |
+| `run_paused` | A gate intentionally pauses the run | `workflow_name`, `step_name`, `fired_rules`, `facts`, `duration_seconds` |
 | `run_resumed` | Run is resumed | `workflow_name`, `completed_steps`, `remaining_steps` |
 
 ### Step lifecycle events

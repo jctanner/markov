@@ -7,12 +7,12 @@ A Go-based YAML workflow engine for Kubernetes. Define workflows declaratively, 
 
 ## Why "Markov"?
 
-A [Markov chain](https://en.wikipedia.org/wiki/Markov_chain) is a system that transitions between states based on its current state. Markov workflows work the same way: gate steps evaluate rules against the current state, decide the next transition (continue, skip, or pause), and workflows can recursively invoke themselves — looping until the rules say to stop. The result is a declarative state machine where each iteration's next move depends only on the facts right now, not the history of how it got there.
+A [Markov chain](https://en.wikipedia.org/wiki/Markov_chain) is a system that transitions between states based on its current state. Markov workflows work the same way: gate steps evaluate rules against the current state, decide whether to continue or pause for explicit external input, and workflows can recursively invoke themselves — looping until the rules say to stop. The result is a declarative state machine where each iteration's next move depends only on the facts right now, not the history of how it got there.
 
 ## Features
 
 - **Declarative YAML workflows** — multiple workflows per file with an entrypoint
-- **User-defined step types** — compose reusable types from engine primitives (`k8s_job`, `http_request`, `shell_exec`, `load_artifact`)
+- **User-defined step types** — compose reusable types from engine primitives (`k8s_job`, `http_request`, `shell_exec`, `script_exec`, `prompt`, `load_artifact`)
 - **Fan-out / fan-in** — `for_each` with sliding-window concurrency control (`forks`)
 - **Sub-workflows & recursion** — invoke named workflows inline; workflows can call themselves to loop, controlled by gate rules
 - **Conditionals** — `when:` expressions to skip or run steps
@@ -20,7 +20,7 @@ A [Markov chain](https://en.wikipedia.org/wiki/Markov_chain) is a system that tr
 - **Artifact loading** — load YAML, markdown, and markdown table files from local or K8s volumes; use parsed data in conditions
 - **`set_fact`** — compute and store variables from expressions or table lookups for use in downstream steps
 - **`assert`** — validate conditions and fail the workflow with a message if any are false
-- **Rule engine / gates** — define named rules with salience-based priority; gate steps evaluate rules via [Grule](https://github.com/hyperjumptech/grule-rule-engine) with forward chaining, set facts, and control flow (continue/skip/pause)
+- **Rule engine / gates** — define named rules with salience-based priority; gate steps evaluate rules via [Grule](https://github.com/hyperjumptech/grule-rule-engine), set facts, and can pause durably for explicit resume input
 - **Checkpoint/resume** — SQLite state store; resume failed runs from the last successful step
 - **K8s native** — creates `batch/v1` Jobs directly (no Argo dependency)
 
@@ -126,7 +126,7 @@ workflows:
 cmd/markov/          CLI entrypoint
 pkg/engine/          Workflow execution, gate evaluation, artifact loading, facts
 pkg/parser/          YAML parsing, validation, rule loading
-pkg/executor/        Step executors (k8s_job, shell_exec, http_request)
+pkg/executor/        Step executors (k8s_job, shell_exec, script_exec, prompt, http_request)
 pkg/state/           Checkpoint store (SQLite)
 pkg/template/        Pongo2 template rendering
 examples/            Example workflow files

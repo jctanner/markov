@@ -114,6 +114,7 @@ func (h *HTTPCallback) sendAndFlush(event any) error {
 func (h *HTTPCallback) OnRunStarted(event RunStartedEvent) error        { return h.send(event) }
 func (h *HTTPCallback) OnRunCompleted(event RunCompletedEvent) error      { return h.sendAndFlush(event) }
 func (h *HTTPCallback) OnRunFailed(event RunFailedEvent) error            { return h.sendAndFlush(event) }
+func (h *HTTPCallback) OnRunPaused(event RunPausedEvent) error            { return h.sendAndFlush(event) }
 func (h *HTTPCallback) OnRunResumed(event RunResumedEvent) error          { return h.send(event) }
 func (h *HTTPCallback) OnStepStarted(event StepStartedEvent) error        { return h.send(event) }
 func (h *HTTPCallback) OnStepCompleted(event StepCompletedEvent) error    { return h.send(event) }

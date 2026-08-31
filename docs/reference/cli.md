@@ -79,7 +79,7 @@ markov run pipeline.yaml --run-id my-pipeline-run-001
 
 ### markov resume
 
-Resume a previously failed workflow run from the point of failure. The workflow file path is stored in the state database, so it does not need to be provided again.
+Resume a previously failed or paused workflow run from the point of failure. The workflow file path is stored in the state database, so it does not need to be provided again. A paused run requires at least one explicit `--var` override, which is applied before its paused gate is evaluated again.
 
 For operational guidance, prerequisites, and caveats, see [Resuming Workflows](../guides/resuming-workflows.md).
 
@@ -98,12 +98,16 @@ markov resume <run_id> [flags]
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--state-store path-or-dsn` | string | `MARKOV_STATE_STORE`, `/tmp/markov-state.db`, or `./markov-state.db` | SQLite path or Postgres DSN. |
+| `--var key=value` | string (repeatable) | -- | Override a variable before resuming. Required for paused runs. Values are parsed with the same coercion as `markov run --var`. |
 
 **Examples:**
 
 ```bash
 # Resume a failed run
 markov resume abc123
+
+# Supply an explicit approval input to resume a paused run
+markov resume abc123 --var approved=true
 
 # Resume using a specific state store
 markov resume abc123 --state-store /data/markov.db

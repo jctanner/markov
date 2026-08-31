@@ -36,6 +36,7 @@ func (j *JSONLCallback) write(event any) error {
 func (j *JSONLCallback) OnRunStarted(event RunStartedEvent) error        { return j.write(event) }
 func (j *JSONLCallback) OnRunCompleted(event RunCompletedEvent) error      { return j.write(event) }
 func (j *JSONLCallback) OnRunFailed(event RunFailedEvent) error            { return j.write(event) }
+func (j *JSONLCallback) OnRunPaused(event RunPausedEvent) error            { return j.write(event) }
 func (j *JSONLCallback) OnRunResumed(event RunResumedEvent) error          { return j.write(event) }
 func (j *JSONLCallback) OnStepStarted(event StepStartedEvent) error        { return j.write(event) }
 func (j *JSONLCallback) OnStepCompleted(event StepCompletedEvent) error    { return j.write(event) }
