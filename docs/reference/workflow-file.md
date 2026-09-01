@@ -385,16 +385,24 @@ These are the built-in step types available in every workflow file.
 
 The parser enforces the following rules when loading a workflow file. Validation errors prevent execution.
 
-1. **`entrypoint` is required** and must match the `name` of a defined workflow.
-2. **At least one workflow** must be defined in the `workflows` list.
-3. **Workflow names must be unique** across all workflows in the file.
-4. **Step names must be unique** within their parent workflow.
-5. **Steps must have either `type` or `workflow`** set (not neither, not both without `type`).
-6. **`for_each` requires `as`** -- you must name the iteration variable.
-7. **`type` must be a known primitive or a defined `step_type`** in the file's `step_types` map.
-8. **Gate steps must reference at least one rule**, and every referenced rule must exist in the top-level `rules` block.
-9. **`forks` defaults to 5** if set to 0 or a negative value.
-10. **Sub-workflow references** must point to a workflow name that exists in the file.
+Structured Markov fields are strict: unsupported keys at the top level or in
+workflow, step, rule, step-type, and artifact objects are rejected rather than
+silently ignored. This catches misspellings and example-only fields such as
+`on_pause`. Free-form maps remain open for executor and workflow data:
+`params`, `vars`, `facts`, artifact file contents, and the `job`, `defaults`,
+and `params` maps of a custom step type may contain application-specific keys.
+
+1. **Structured fields must be known**; unknown keys are parsing errors.
+2. **`entrypoint` is required** and must match the `name` of a defined workflow.
+3. **At least one workflow** must be defined in the `workflows` list.
+4. **Workflow names must be unique** across all workflows in the file.
+5. **Step names must be unique** within their parent workflow.
+6. **Steps must have either `type` or `workflow`** set (not neither, not both without `type`).
+7. **`for_each` requires `as`** -- you must name the iteration variable.
+8. **`type` must be a known primitive or a defined `step_type`** in the file's `step_types` map.
+9. **Gate steps must reference at least one rule**, and every referenced rule must exist in the top-level `rules` block.
+10. **`forks` defaults to 5** if set to 0 or a negative value.
+11. **Sub-workflow references** must point to a workflow name that exists in the file.
 
 ---
 

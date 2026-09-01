@@ -283,7 +283,7 @@ Use `markov validate` to check syntax without executing:
 markov validate my-pipeline.yaml
 ```
 
-This checks that the entrypoint exists, workflow/step names are unique, types resolve correctly, and for_each has the required `as` field.
+This checks that the entrypoint exists, workflow/step names are unique, types resolve correctly, `for_each` has the required `as` field, and unsupported structured YAML fields are rejected. Executor-specific keys remain valid under `params`.
 
 ## Common Mistakes
 

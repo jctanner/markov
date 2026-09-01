@@ -135,6 +135,132 @@ workflows:
 	}
 }
 
+func TestParseRejectsUnknownStructuredFields(t *testing.T) {
+	tests := []struct {
+		name  string
+		yaml  string
+		field string
+	}{
+		{
+			name:  "top level",
+			field: "unsupported_top_level",
+			yaml: `
+entrypoint: main
+unsupported_top_level: true
+workflows:
+  - name: main
+    steps: []`,
+		},
+		{
+			name:  "workflow",
+			field: "unsupported_workflow",
+			yaml: `
+entrypoint: main
+workflows:
+  - name: main
+    unsupported_workflow: true
+    steps: []`,
+		},
+		{
+			name:  "step",
+			field: "on_pause",
+			yaml: `
+entrypoint: main
+workflows:
+  - name: main
+    steps:
+      - name: approval
+        type: shell_exec
+        on_pause: ignored
+        params: {command: "true"}`,
+		},
+		{
+			name:  "rule",
+			field: "unsupported_rule",
+			yaml: `
+entrypoint: main
+rules:
+  - name: continue
+    when: "true"
+    action: continue
+    unsupported_rule: true
+workflows:
+  - name: main
+    steps: []`,
+		},
+		{
+			name:  "step type",
+			field: "unsupported_step_type",
+			yaml: `
+entrypoint: main
+step_types:
+  local:
+    base: shell_exec
+    unsupported_step_type: true
+workflows:
+  - name: main
+    steps: []`,
+		},
+		{
+			name:  "artifact",
+			field: "unsupported_artifact",
+			yaml: `
+entrypoint: main
+workflows:
+  - name: main
+    steps:
+      - name: collect
+        type: shell_exec
+        params: {command: "true"}
+        artifacts:
+          result:
+            path: result.yaml
+            unsupported_artifact: true`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Parse([]byte(tt.yaml))
+			if err == nil || !strings.Contains(err.Error(), tt.field) {
+				t.Fatalf("Parse() error = %v, want unknown field %q", err, tt.field)
+			}
+		})
+	}
+}
+
+func TestParseAllowsFreeFormExecutorMaps(t *testing.T) {
+	_, err := Parse([]byte(`
+entrypoint: main
+vars:
+  application_specific_setting:
+    nested: value
+step_types:
+  custom:
+    base: shell_exec
+    defaults:
+      future_default: true
+    job:
+      future_job_setting: value
+    params:
+      future_parameter: value
+workflows:
+  - name: main
+    vars:
+      workflow_specific: value
+    steps:
+      - name: run
+        type: custom
+        params:
+          executor_specific: value
+        facts:
+          rule_specific: value
+`))
+	if err != nil {
+		t.Fatalf("Parse() error = %v, want free-form maps to remain accepted", err)
+	}
+}
+
 func TestParseDirMergesDirectoryWorkflow(t *testing.T) {
 	dir := makeDirectoryWorkflow(t)
 
@@ -201,6 +327,22 @@ func TestParseDirRejectsDuplicateRules(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), `duplicate rule name "duplicate"`) {
 		t.Fatalf("error = %q, want duplicate rule error", err)
+	}
+}
+
+func TestParseDirRejectsUnknownFieldsWithFilePath(t *testing.T) {
+	dir := makeDirectoryWorkflow(t)
+	metaPath := filepath.Join(dir, "meta.yaml")
+	writeFile(t, metaPath, `
+entrypoint: main
+namespace: markov-test
+forks: 2
+unknown_meta_field: true
+`)
+
+	_, err := ParseFile(dir)
+	if err == nil || !strings.Contains(err.Error(), "unknown_meta_field") || !strings.Contains(err.Error(), metaPath) {
+		t.Fatalf("ParseFile() error = %v, want meta path and unknown field", err)
 	}
 }
 

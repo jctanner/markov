@@ -61,6 +61,7 @@ Internal design docs and research notes (preserved for reference):
 - [Callback Jobs Startup](design/callback-jobs-startup.md) — callback initialization patterns
 - [fromjson Support](design/fromjson-support.md) — JSON parsing filter design
 - [Key Sorting](design/key-sorting.md) — stable iteration key design
+- [Proposed Idempotency and Reconciliation Workflow](design/idempotency-reconciliation-example.md) — design example for retry-safe external effects
 
 ## How to Use These Docs
 

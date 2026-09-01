@@ -18,6 +18,8 @@
 
 ## Completed Tasks
 
+- [Make all current examples validate](docs/tasks/done/validate-all-examples.md)
+- [Add strict YAML validation](docs/tasks/done/strict-yaml-validation.md)
 - [Implement source integrity modes](docs/tasks/done/source-integrity-modes.md)
 - [Add k8s_job_wait step type](docs/tasks/done/k8s-job-wait-step-type.md)
 - [Add Postgres state store support](docs/tasks/done/postgres-state-store.md)

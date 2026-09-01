@@ -104,13 +104,11 @@ workflows:
         register: issue_results
 
       - name: portfolio-report
-        type: llm_invoke
+        type: shell_exec
         params:
-          model: "{{ model }}"
-          prompt: |
-            Generate an executive portfolio report summarizing
-            {{ issue_results | length }} processed RFEs.
-            Data: {{ issue_results | to_yaml }}
+          command: >-
+            echo "calling LLM to generate a portfolio report for
+            {{ issue_results | length }} processed RFEs"
         register: report
 
       - name: save-report
@@ -118,7 +116,7 @@ workflows:
         params:
           command: |
             cat > /app/artifacts/{{ project }}/portfolio-report.md << 'REPORT'
-            {{ report.output }}
+            {{ report.stdout }}
             REPORT
 
   # ------------------------------------------------------------------
@@ -135,24 +133,17 @@ workflows:
     steps:
 
       - name: classify
-        type: llm_invoke
+        type: shell_exec
         params:
-          model: sonnet
-          prompt: |
-            Classify this Jira issue. Return YAML:
-              type: feature-request | bug | tech-debt | question
-              complexity: low | medium | high
-            Key: {{ issue }}
-            Summary: {{ summary }}
-            Description: {{ description }}
+          command: >-
+            echo "calling LLM to classify {{ issue }} as feature-request, bug,
+            tech-debt, or question"
         register: classification
 
       - name: skip-if-trivial
-        type: gate
-        when: "classification.result.complexity != 'low'"
+        type: shell_exec
         params:
-          message: "{{ issue }} is low complexity — skipping."
-          on_fail: halt
+          command: "echo 'would skip {{ issue }} when classification is low complexity'"
 
       - name: rfe-analysis
         type: agent_skill
@@ -165,14 +156,9 @@ workflows:
             format: yaml
 
       - name: analysis-gate
-        type: gate
-        when: "rfe-analysis.artifacts.result.recommendation != 'reject'"
+        type: shell_exec
         params:
-          message: |
-            Analysis for {{ issue }}:
-            Confidence: {{ rfe-analysis.artifacts.result.confidence }}
-            Recommendation: {{ rfe-analysis.artifacts.result.recommendation }}
-          on_fail: halt
+          command: "echo 'would evaluate the analysis decision before continuing'"
 
       - name: create-strategy
         type: agent_skill
@@ -188,13 +174,9 @@ workflows:
             format: markdown
 
       - name: strategy-review
-        type: gate
+        type: shell_exec
         params:
-          message: |
-            Review strategy for {{ issue }} before refinement.
-            Effort: {{ create-strategy.artifacts.strategy.estimated_effort }}
-            Risks: {{ create-strategy.artifacts.strategy.risks }}
-          timeout: 7200
+          command: "echo 'would request a human review of the strategy for {{ issue }}'"
 
       - name: refine-strategy
         type: agent_skill

@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -102,7 +103,7 @@ func Parse(data []byte) (*WorkflowFile, error) {
 
 func parse(data []byte, scriptDir string) (*WorkflowFile, error) {
 	var wf WorkflowFile
-	if err := yaml.Unmarshal(data, &wf); err != nil {
+	if err := decodeStrict(data, &wf); err != nil {
 		return nil, fmt.Errorf("parsing workflow YAML: %w", err)
 	}
 	wf.ScriptDir = scriptDir
@@ -123,10 +124,18 @@ func readYAML(path string, out any) error {
 	if len(data) == 0 {
 		return nil
 	}
-	if err := yaml.Unmarshal(data, out); err != nil {
+	if err := decodeStrict(data, out); err != nil {
 		return fmt.Errorf("parsing %q: %w", path, err)
 	}
 	return nil
+}
+
+// decodeStrict rejects unknown fields on typed schema objects. Free-form maps
+// such as params, vars, facts, and artifact data remain intentionally open.
+func decodeStrict(data []byte, out any) error {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	return decoder.Decode(out)
 }
 
 func readStepTypes(path string) (map[string]StepType, error) {
@@ -371,7 +380,7 @@ func loadRuleFiles(wf *WorkflowFile, baseDir string) error {
 			var rf struct {
 				Rules []Rule `yaml:"rules"`
 			}
-			if err := yaml.Unmarshal(data, &rf); err != nil {
+			if err := decodeStrict(data, &rf); err != nil {
 				return fmt.Errorf("parsing rule file %q: %w", r.File, err)
 			}
 			expanded = append(expanded, rf.Rules...)

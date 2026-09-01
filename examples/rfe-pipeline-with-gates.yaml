@@ -215,11 +215,6 @@ workflows:
           - rfe_auto_approve
           - rfe_needs_attention
           - rfe_reject
-        on_pause:
-          notify: "#rfe-review"
-          message: "{{ issue }} needs human review (score: {{ review_score }}/8)"
-          timeout: 4h
-          on_timeout: skip
 
       # ── Action phase ────────────────────────────────────────
 

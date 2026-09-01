@@ -6,6 +6,13 @@ Agent: codex
 
 Completed:
 
+- Reworked the legacy artifact-condition example into the current workflow
+  schema, using clearly labelled shell placeholders for external agents.
+- Replaced unavailable LLM and rule-less gate placeholders in the batch RFE
+  example, and removed the obsolete `on_pause` block from the RFE gate example.
+- Added strict parsing for structured workflow YAML. Unsupported top-level,
+  workflow, step, rule, step-type, and artifact fields now fail validation;
+  free-form executor maps remain supported.
 - Added source-tree fingerprints and `warn`, `strict`, and `off` source-integrity
   modes for resume.
 - Added SQLite/Postgres persistence for original source digests and resume-check
@@ -15,6 +22,8 @@ Completed:
 
 Verified:
 
+- `bin/markov validate` passed for all 21 current top-level and directory
+  examples.
 - Focused source, state, engine, and CLI tests plus `go vet ./...` passed.
 - Built `bin/markov` and exercised an unchanged strict resume end to end.
 
