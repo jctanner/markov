@@ -238,7 +238,7 @@ func validate(wf *WorkflowFile) error {
 			return fmt.Errorf("duplicate workflow name %q", w.Name)
 		}
 		names[w.Name] = true
-		if err := validateSteps(wf, w.Name, w.Steps); err != nil {
+		if err := validateWorkflowSteps(wf, &w); err != nil {
 			return err
 		}
 	}
@@ -246,14 +246,30 @@ func validate(wf *WorkflowFile) error {
 	return nil
 }
 
-func validateSteps(wf *WorkflowFile, workflowName string, steps []Step) error {
+func validateWorkflowSteps(wf *WorkflowFile, workflow *Workflow) error {
 	stepNames := make(map[string]bool)
+	for _, section := range []struct {
+		name  string
+		steps []Step
+	}{
+		{name: "steps", steps: workflow.Steps},
+		{name: "rescue", steps: workflow.Rescue},
+		{name: "always", steps: workflow.Always},
+	} {
+		if err := validateSteps(wf, workflow.Name, section.name, section.steps, stepNames); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateSteps(wf *WorkflowFile, workflowName, section string, steps []Step, stepNames map[string]bool) error {
 	for _, s := range steps {
 		if s.Name == "" {
-			return fmt.Errorf("workflow %q: step missing name", workflowName)
+			return fmt.Errorf("workflow %q, %s: step missing name", workflowName, section)
 		}
 		if stepNames[s.Name] {
-			return fmt.Errorf("workflow %q: duplicate step name %q", workflowName, s.Name)
+			return fmt.Errorf("workflow %q: duplicate step name %q across steps, rescue, and always", workflowName, s.Name)
 		}
 		stepNames[s.Name] = true
 

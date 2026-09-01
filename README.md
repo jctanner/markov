@@ -16,6 +16,7 @@ A [Markov chain](https://en.wikipedia.org/wiki/Markov_chain) is a system that tr
 - **Fan-out / fan-in** — `for_each` with sliding-window concurrency control (`forks`)
 - **Sub-workflows & recursion** — invoke named workflows inline; workflows can call themselves to loop, controlled by gate rules
 - **Conditionals** — `when:` expressions to skip or run steps
+- **Failure handling** — workflow-level `rescue` and `always` handlers for recovery and teardown
 - **Template rendering** — Jinja2-compatible (pongo2) for params and expressions
 - **Artifact loading** — load YAML, markdown, and markdown table files from local or K8s volumes; use parsed data in conditions
 - **`set_fact`** — compute and store variables from expressions or table lookups for use in downstream steps

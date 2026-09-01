@@ -18,6 +18,7 @@
 
 ## Completed Tasks
 
+- [Implement source integrity modes](docs/tasks/done/source-integrity-modes.md)
 - [Add k8s_job_wait step type](docs/tasks/done/k8s-job-wait-step-type.md)
 - [Add Postgres state store support](docs/tasks/done/postgres-state-store.md)
 - [Define directory workflow schema](docs/tasks/done/directory-workflow-schema.md)
@@ -37,3 +38,4 @@
 ## Decisions
 
 - [ADR-0001: Directory Workflow File Layout](docs/decisions/ADR-0001-directory-workflow-layout.md)
+- [ADR-0002: Source Integrity Modes for Resumable Workflow Runs](docs/decisions/ADR-0002-source-integrity-modes.md)

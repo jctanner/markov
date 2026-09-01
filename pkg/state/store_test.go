@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,6 +19,68 @@ func TestOpenStoreSelectsSQLiteForPaths(t *testing.T) {
 	defer store.Close()
 	if _, ok := store.(*SQLiteStore); !ok {
 		t.Fatalf("store = %T, want *SQLiteStore", store)
+	}
+}
+
+func TestSQLiteStoreMigratesLegacyRunsTableForSourceDigest(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`
+		CREATE TABLE runs (
+			run_id TEXT PRIMARY KEY,
+			workflow_file TEXT NOT NULL,
+			entrypoint TEXT NOT NULL,
+			status TEXT NOT NULL,
+			vars_json TEXT NOT NULL DEFAULT '{}',
+			parent_run_id TEXT,
+			parent_step TEXT,
+			for_each_key TEXT,
+			started_at TIMESTAMP NOT NULL,
+			completed_at TIMESTAMP
+		);
+		CREATE TABLE steps (
+			run_id TEXT NOT NULL,
+			workflow_name TEXT NOT NULL,
+			step_name TEXT NOT NULL,
+			status TEXT NOT NULL,
+			output_json TEXT,
+			artifacts_json TEXT,
+			error TEXT,
+			started_at TIMESTAMP,
+			completed_at TIMESTAMP,
+			PRIMARY KEY (run_id, workflow_name, step_name)
+		);`)
+	if err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore() error = %v", err)
+	}
+	defer store.Close()
+	run := &Run{
+		RunID:        "source-migration",
+		WorkflowFile: "workflow.yaml",
+		SourceDigest: "digest",
+		Entrypoint:   "main",
+		Status:       RunRunning,
+		VarsJSON:     `{}`,
+		StartedAt:    time.Now(),
+	}
+	if err := store.CreateRun(context.Background(), run); err != nil {
+		t.Fatalf("CreateRun() error = %v", err)
+	}
+	got, err := store.GetRun(context.Background(), run.RunID)
+	if err != nil || got.SourceDigest != "digest" {
+		t.Fatalf("GetRun() = %#v, %v; want source digest", got, err)
 	}
 }
 
@@ -81,6 +144,7 @@ func testStoreContract(t *testing.T, store Store) {
 	run := &Run{
 		RunID:        runID,
 		WorkflowFile: "/workflows/pipeline",
+		SourceDigest: "original-digest",
 		Entrypoint:   "main",
 		Status:       RunRunning,
 		VarsJSON:     `{"env":"test"}`,
@@ -116,11 +180,30 @@ func testStoreContract(t *testing.T, store Store) {
 	if err != nil {
 		t.Fatalf("GetRun() error = %v", err)
 	}
-	if got.RunID != runID || got.WorkflowFile != run.WorkflowFile || got.Entrypoint != "main" || got.Status != RunFailed {
+	if got.RunID != runID || got.WorkflowFile != run.WorkflowFile || got.SourceDigest != run.SourceDigest || got.Entrypoint != "main" || got.Status != RunFailed {
 		t.Fatalf("GetRun() = %#v, want updated run", got)
 	}
 	if got.CompletedAt == nil {
 		t.Fatalf("GetRun().CompletedAt = nil, want timestamp")
+	}
+
+	check := &SourceCheck{
+		RunID:          runID,
+		CheckedAt:      completed,
+		Mode:           "warn",
+		ExpectedDigest: "original-digest",
+		ObservedDigest: "changed-digest",
+		SourceDrifted:  true,
+	}
+	if err := store.SaveSourceCheck(ctx, check); err != nil {
+		t.Fatalf("SaveSourceCheck() error = %v", err)
+	}
+	checks, err := store.GetSourceChecks(ctx, runID)
+	if err != nil {
+		t.Fatalf("GetSourceChecks() error = %v", err)
+	}
+	if len(checks) != 1 || checks[0].Mode != "warn" || !checks[0].SourceDrifted || checks[0].ObservedDigest != "changed-digest" {
+		t.Fatalf("GetSourceChecks() = %#v, want persisted drift check", checks)
 	}
 
 	children, err := store.GetChildRuns(ctx, runID)

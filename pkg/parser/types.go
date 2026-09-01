@@ -36,6 +36,8 @@ type Workflow struct {
 	Description string         `yaml:"description"`
 	Vars        map[string]any `yaml:"vars"`
 	Steps       []Step         `yaml:"steps"`
+	Rescue      []Step         `yaml:"rescue"`
+	Always      []Step         `yaml:"always"`
 }
 
 type Step struct {

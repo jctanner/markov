@@ -1,5 +1,23 @@
 # Session Log
 
+## 2026-09-01
+
+Agent: codex
+
+Completed:
+
+- Added source-tree fingerprints and `warn`, `strict`, and `off` source-integrity
+  modes for resume.
+- Added SQLite/Postgres persistence for original source digests and resume-check
+  history.
+- Recorded ADR-0002 and documented CLI, state-store, resume, and callback
+  behavior.
+
+Verified:
+
+- Focused source, state, engine, and CLI tests plus `go vet ./...` passed.
+- Built `bin/markov` and exercised an unchanged strict resume end to end.
+
 ## 2026-07-01
 
 Agent: codex

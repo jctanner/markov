@@ -34,6 +34,7 @@ var (
 	flagCallbackBufferSize  int
 	flagDebug               bool
 	flagRunID               string
+	flagSourceIntegrity     string
 
 	saTokenPath     = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 	saNamespacePath = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
@@ -100,6 +101,7 @@ func main() {
 	}
 	addStateStoreFlag(resumeCmd, stateStorePath)
 	resumeCmd.Flags().StringArrayVar(&flagVars, "var", nil, "Override vars before resuming (required for paused runs; key=value, repeatable)")
+	resumeCmd.Flags().StringVar(&flagSourceIntegrity, "source-integrity", "warn", "Source drift policy: warn, strict, or off")
 
 	statusCmd := &cobra.Command{
 		Use:   "status <run_id>",
@@ -181,6 +183,7 @@ func runWorkflow(cmd *cobra.Command, args []string) error {
 	eng.Verbose = flagVerbose
 	eng.RunID = flagRunID
 	eng.SourcePath = args[0]
+	configureSourceIdentity(eng)
 
 	cbs, err := buildCallbacks()
 	if err != nil {
@@ -215,6 +218,10 @@ func runWorkflow(cmd *cobra.Command, args []string) error {
 }
 
 func resumeWorkflow(cmd *cobra.Command, args []string) error {
+	mode, err := engine.ParseSourceIntegrityMode(flagSourceIntegrity)
+	if err != nil {
+		return err
+	}
 	store, err := state.OpenStore(flagStateStore)
 	if err != nil {
 		return err
@@ -239,6 +246,8 @@ func resumeWorkflow(cmd *cobra.Command, args []string) error {
 
 	eng := engine.New(wfFile, store, executors)
 	eng.SourcePath = run.WorkflowFile
+	eng.SourceIntegrityMode = mode
+	configureSourceIdentity(eng)
 	err = eng.ResumeWithVars(ctx, args[0], parseVarFlags(flagVars))
 	if engine.IsPaused(err) {
 		fmt.Printf("run %s remains paused; supply different --var approval input to resume\n", args[0])
@@ -263,9 +272,27 @@ func showStatus(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Run:        %s\n", run.RunID)
 	fmt.Printf("Workflow:   %s\n", run.Entrypoint)
 	fmt.Printf("Status:     %s\n", run.Status)
+	if run.SourceDigest != "" {
+		fmt.Printf("Source:     %s\n", run.SourceDigest)
+	} else {
+		fmt.Println("Source:     unavailable (legacy run)")
+	}
 	fmt.Printf("Started:    %s\n", run.StartedAt.Format("2006-01-02 15:04:05"))
 	if run.CompletedAt != nil {
 		fmt.Printf("Completed:  %s\n", run.CompletedAt.Format("2006-01-02 15:04:05"))
+	}
+	checks, err := store.GetSourceChecks(ctx, args[0])
+	if err != nil {
+		return err
+	}
+	if len(checks) > 0 {
+		last := checks[len(checks)-1]
+		fmt.Printf("Source check: %s (%s)", last.Mode, last.CheckedAt.Format("2006-01-02 15:04:05"))
+		if last.SourceDrifted {
+			fmt.Printf(" — drift detected (%s)\n", last.ObservedDigest)
+		} else {
+			fmt.Println()
+		}
 	}
 
 	if flagSteps {
@@ -292,6 +319,12 @@ func showStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func configureSourceIdentity(eng *engine.Engine) {
+	if !state.IsPostgresDSN(flagStateStore) {
+		eng.SourceExcludes = []string{flagStateStore}
+	}
 }
 
 func listRuns(cmd *cobra.Command, args []string) error {

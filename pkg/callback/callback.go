@@ -12,6 +12,7 @@ type RunStartedEvent struct {
 	EventHeader
 	WorkflowName string         `json:"workflow_name"`
 	WorkflowFile string         `json:"workflow_file"`
+	SourceDigest string         `json:"source_digest,omitempty"`
 	Vars         map[string]any `json:"vars"`
 	Forks        int            `json:"forks"`
 	Namespace    string         `json:"namespace"`
@@ -43,9 +44,13 @@ type RunPausedEvent struct {
 
 type RunResumedEvent struct {
 	EventHeader
-	WorkflowName   string `json:"workflow_name"`
-	CompletedSteps int    `json:"completed_steps"`
-	RemainingSteps int    `json:"remaining_steps"`
+	WorkflowName         string `json:"workflow_name"`
+	CompletedSteps       int    `json:"completed_steps"`
+	RemainingSteps       int    `json:"remaining_steps"`
+	SourceIntegrityMode  string `json:"source_integrity_mode,omitempty"`
+	ExpectedSourceDigest string `json:"expected_source_digest,omitempty"`
+	ObservedSourceDigest string `json:"observed_source_digest,omitempty"`
+	SourceDrifted        bool   `json:"source_drifted"`
 }
 
 type StepStartedEvent struct {

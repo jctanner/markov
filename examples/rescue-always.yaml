@@ -1,0 +1,42 @@
+entrypoint: main
+
+# Run normally to see the always cleanup handler:
+#   markov run examples/rescue-always.yaml
+#
+# Simulate a failure to see rescue followed by always:
+#   markov run examples/rescue-always.yaml --var simulate_failure=true
+vars:
+  simulate_failure: false
+
+workflows:
+  - name: main
+    description: Run cleanup after every terminal attempt and report failures.
+    steps:
+      - name: start
+        type: shell_exec
+        params:
+          command: "echo 'starting release'"
+
+      - name: fail-release
+        type: shell_exec
+        when: "simulate_failure"
+        params:
+          command: "echo 'release failed' >&2; exit 1"
+
+      - name: release
+        type: shell_exec
+        when: "not simulate_failure"
+        params:
+          command: "echo 'release completed'"
+
+    rescue:
+      - name: report-failure
+        type: shell_exec
+        params:
+          command: "echo 'rescue: release needs attention'"
+
+    always:
+      - name: cleanup
+        type: shell_exec
+        params:
+          command: "echo 'always: cleaning up temporary resources'"

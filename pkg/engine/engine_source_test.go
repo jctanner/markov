@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -36,7 +37,10 @@ func TestRunStoresWorkflowSourcePath(t *testing.T) {
 	}
 
 	eng := New(wfFile, store, nil)
-	eng.SourcePath = "examples/dir-based-hello-world"
+	eng.SourcePath = t.TempDir()
+	if err := os.WriteFile(filepath.Join(eng.SourcePath, "workflow.yaml"), []byte("entrypoint: main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	runID, err := eng.Run(context.Background(), "main", nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)

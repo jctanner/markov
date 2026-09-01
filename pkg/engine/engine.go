@@ -18,6 +18,7 @@ import (
 	"github.com/jctanner/markov/pkg/callback"
 	"github.com/jctanner/markov/pkg/executor"
 	"github.com/jctanner/markov/pkg/parser"
+	"github.com/jctanner/markov/pkg/source"
 	"github.com/jctanner/markov/pkg/state"
 	"github.com/jctanner/markov/pkg/template"
 	"k8s.io/client-go/kubernetes"
@@ -35,7 +36,35 @@ type Engine struct {
 	Verbose    bool
 	RunID      string
 	SourcePath string
-	callbacks  []callback.Callback
+	// SourceExcludes contains local state-store paths that must not become part
+	// of the workflow source fingerprint.
+	SourceExcludes      []string
+	SourceIntegrityMode SourceIntegrityMode
+	sourceDigest        string
+	callbacks           []callback.Callback
+}
+
+// SourceIntegrityMode controls behavior when source files differ at resume.
+type SourceIntegrityMode string
+
+const (
+	SourceIntegrityWarn   SourceIntegrityMode = "warn"
+	SourceIntegrityStrict SourceIntegrityMode = "strict"
+	SourceIntegrityOff    SourceIntegrityMode = "off"
+)
+
+// ParseSourceIntegrityMode validates a source-integrity CLI value.
+func ParseSourceIntegrityMode(value string) (SourceIntegrityMode, error) {
+	mode := SourceIntegrityMode(strings.ToLower(strings.TrimSpace(value)))
+	if mode == "" {
+		return SourceIntegrityWarn, nil
+	}
+	switch mode {
+	case SourceIntegrityWarn, SourceIntegrityStrict, SourceIntegrityOff:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("invalid source integrity mode %q (want warn, strict, or off)", value)
+	}
 }
 
 // PauseError signals that a gate intentionally stopped the workflow. It is
@@ -117,6 +146,11 @@ func (e *Engine) Run(ctx context.Context, workflowName string, vars map[string]a
 	if wf == nil {
 		return "", fmt.Errorf("workflow %q not found", workflowName)
 	}
+	sourceDigest, err := e.currentSourceDigest()
+	if err != nil {
+		return "", err
+	}
+	e.sourceDigest = sourceDigest
 
 	runCtx := e.buildContext(vars, wf.Vars)
 
@@ -129,6 +163,7 @@ func (e *Engine) Run(ctx context.Context, workflowName string, vars map[string]a
 	run := &state.Run{
 		RunID:        runID,
 		WorkflowFile: e.SourcePath,
+		SourceDigest: sourceDigest,
 		Entrypoint:   workflowName,
 		Status:       state.RunRunning,
 		VarsJSON:     string(varsJSON),
@@ -142,6 +177,8 @@ func (e *Engine) Run(ctx context.Context, workflowName string, vars map[string]a
 		return cb.OnRunStarted(callback.RunStartedEvent{
 			EventHeader:  callback.EventHeader{Timestamp: run.StartedAt, RunID: runID, EventType: "run_started"},
 			WorkflowName: workflowName,
+			WorkflowFile: e.SourcePath,
+			SourceDigest: sourceDigest,
 			Vars:         runCtx,
 			Forks:        e.forks,
 			Namespace:    e.file.Namespace,
@@ -154,7 +191,7 @@ func (e *Engine) Run(ctx context.Context, workflowName string, vars map[string]a
 	e.verbose("[run:%s]   vars: %s", runID, string(varsJSON))
 	e.verbose("[run:%s]   steps: %d", runID, len(wf.Steps))
 
-	err := e.executeWorkflow(ctx, runID, wf, runCtx)
+	err = e.executeWorkflow(ctx, runID, wf, runCtx)
 
 	now := time.Now()
 	duration := now.Sub(run.StartedAt).Seconds()
@@ -219,6 +256,11 @@ func (e *Engine) ResumeWithVars(ctx context.Context, runID string, vars map[stri
 	if run.Status == state.RunPaused && len(vars) == 0 {
 		return fmt.Errorf("paused run %q requires at least one --var override to resume", runID)
 	}
+	check, err := e.checkSourceIntegrity(ctx, run)
+	if err != nil {
+		return err
+	}
+	e.sourceDigest = run.SourceDigest
 
 	wf := e.file.GetWorkflow(run.Entrypoint)
 	if wf == nil {
@@ -285,10 +327,14 @@ func (e *Engine) ResumeWithVars(ctx context.Context, runID string, vars map[stri
 	}
 	e.fireEvent(func(cb callback.Callback) error {
 		return cb.OnRunResumed(callback.RunResumedEvent{
-			EventHeader:    callback.EventHeader{Timestamp: time.Now(), RunID: runID, EventType: "run_resumed"},
-			WorkflowName:   run.Entrypoint,
-			CompletedSteps: completedCount,
-			RemainingSteps: len(wf.Steps) - completedCount,
+			EventHeader:          callback.EventHeader{Timestamp: time.Now(), RunID: runID, EventType: "run_resumed"},
+			WorkflowName:         run.Entrypoint,
+			CompletedSteps:       completedCount,
+			RemainingSteps:       len(wf.Steps) - completedCount,
+			SourceIntegrityMode:  check.Mode,
+			ExpectedSourceDigest: check.ExpectedDigest,
+			ObservedSourceDigest: check.ObservedDigest,
+			SourceDrifted:        check.SourceDrifted,
 		})
 	})
 
@@ -339,7 +385,78 @@ func (e *Engine) ResumeWithVars(ctx context.Context, runID string, vars map[stri
 	return err
 }
 
+func (e *Engine) currentSourceDigest() (string, error) {
+	if e.SourcePath == "" {
+		return "", nil
+	}
+	fingerprint, err := source.Tree(e.SourcePath, e.SourceExcludes)
+	if err != nil {
+		return "", fmt.Errorf("fingerprinting workflow source: %w", err)
+	}
+	return fingerprint.Digest, nil
+}
+
+func (e *Engine) sourceIntegrityMode() SourceIntegrityMode {
+	if e.SourceIntegrityMode == "" {
+		return SourceIntegrityWarn
+	}
+	return e.SourceIntegrityMode
+}
+
+func (e *Engine) checkSourceIntegrity(ctx context.Context, run *state.Run) (*state.SourceCheck, error) {
+	mode := e.sourceIntegrityMode()
+	check := &state.SourceCheck{
+		RunID:          run.RunID,
+		CheckedAt:      time.Now(),
+		Mode:           string(mode),
+		ExpectedDigest: run.SourceDigest,
+	}
+	if mode != SourceIntegrityOff {
+		observed, err := e.currentSourceDigest()
+		if err != nil {
+			if saveErr := e.store.SaveSourceCheck(ctx, check); saveErr != nil {
+				return nil, fmt.Errorf("fingerprinting workflow source: %w (also saving source check: %v)", err, saveErr)
+			}
+			return nil, err
+		}
+		check.ObservedDigest = observed
+		check.SourceDrifted = run.SourceDigest != "" && observed != run.SourceDigest
+	}
+	if err := e.store.SaveSourceCheck(ctx, check); err != nil {
+		return nil, err
+	}
+	if mode == SourceIntegrityStrict {
+		if run.SourceDigest == "" {
+			return nil, fmt.Errorf("cannot resume run %q in strict source-integrity mode: it has no recorded source digest", run.RunID)
+		}
+		if check.SourceDrifted {
+			return nil, fmt.Errorf("cannot resume run %q: workflow source changed (recorded digest %s, current digest %s)", run.RunID, run.SourceDigest, check.ObservedDigest)
+		}
+	}
+	if check.SourceDrifted && mode == SourceIntegrityWarn {
+		log.Printf("[run:%s] workflow source drift accepted (recorded digest %s, current digest %s)", run.RunID, run.SourceDigest, check.ObservedDigest)
+	}
+	return check, nil
+}
+
 func (e *Engine) executeWorkflow(ctx context.Context, runID string, wf *parser.Workflow, runCtx map[string]any) error {
+	mainErr := e.executeSteps(ctx, runID, wf, runCtx)
+	if IsPaused(mainErr) {
+		// A pause is deliberately nonterminal. In particular, cleanup such as
+		// unlocking a resource must not run while a human approval is pending.
+		return mainErr
+	}
+
+	var errs []error
+	if mainErr != nil {
+		errs = append(errs, mainErr)
+		errs = append(errs, e.executeTerminalSteps(ctx, runID, wf, "rescue", wf.Rescue, runCtx)...)
+	}
+	errs = append(errs, e.executeTerminalSteps(ctx, runID, wf, "always", wf.Always, runCtx)...)
+	return errors.Join(errs...)
+}
+
+func (e *Engine) executeSteps(ctx context.Context, runID string, wf *parser.Workflow, runCtx map[string]any) error {
 	for _, step := range wf.Steps {
 		if err := e.executeStep(ctx, runID, wf.Name, step, runCtx); err != nil {
 			return fmt.Errorf("step %q: %w", step.Name, err)
@@ -348,13 +465,35 @@ func (e *Engine) executeWorkflow(ctx context.Context, runID string, wf *parser.W
 	return nil
 }
 
+// executeTerminalSteps runs every handler in a workflow lifecycle section.
+// Terminal steps intentionally bypass completed-step deduplication: a resumed
+// run that fails again must perform its teardown again.
+func (e *Engine) executeTerminalSteps(ctx context.Context, runID string, wf *parser.Workflow, section string, steps []parser.Step, runCtx map[string]any) []error {
+	var errs []error
+	for _, step := range steps {
+		stateName := section + "/" + step.Name
+		if err := e.executeStepWithOptions(ctx, runID, wf.Name, step, stateName, runCtx, true); err != nil {
+			if IsPaused(err) {
+				errs = append(errs, fmt.Errorf("%s step %q may not pause", section, step.Name))
+			} else {
+				errs = append(errs, fmt.Errorf("%s step %q: %w", section, step.Name, err))
+			}
+		}
+	}
+	return errs
+}
+
 func (e *Engine) executeStep(ctx context.Context, runID string, workflowName string, step parser.Step, runCtx map[string]any) error {
 	return e.executeStepWithStateName(ctx, runID, workflowName, step, step.Name, runCtx)
 }
 
 func (e *Engine) executeStepWithStateName(ctx context.Context, runID string, workflowName string, step parser.Step, stateStepName string, runCtx map[string]any) error {
+	return e.executeStepWithOptions(ctx, runID, workflowName, step, stateStepName, runCtx, false)
+}
+
+func (e *Engine) executeStepWithOptions(ctx context.Context, runID string, workflowName string, step parser.Step, stateStepName string, runCtx map[string]any, force bool) error {
 	existing, _ := e.store.GetStep(ctx, runID, workflowName, stateStepName)
-	if existing != nil && existing.Status == state.StepCompleted {
+	if !force && existing != nil && existing.Status == state.StepCompleted {
 		log.Printf("[run:%s] skipping completed step %q", runID, step.Name)
 		if existing.OutputJSON != "" {
 			var output map[string]any
@@ -843,6 +982,7 @@ func (e *Engine) executeSubWorkflow(ctx context.Context, runID string, workflowN
 	subRun := &state.Run{
 		RunID:        subRunID,
 		WorkflowFile: e.SourcePath,
+		SourceDigest: e.sourceDigest,
 		Entrypoint:   step.Workflow,
 		Status:       state.RunRunning,
 		VarsJSON:     string(varsJSON),
@@ -1026,6 +1166,7 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 				subRun := &state.Run{
 					RunID:        subRunID,
 					WorkflowFile: e.SourcePath,
+					SourceDigest: e.sourceDigest,
 					Entrypoint:   step.Workflow,
 					Status:       state.RunRunning,
 					VarsJSON:     string(varsJSON),

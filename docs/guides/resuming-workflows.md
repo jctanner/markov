@@ -1,9 +1,9 @@
 {% raw %}
 # Resuming Workflows
 
-Markov checkpoints every run and step in a state store. SQLite is the default; Postgres can be selected with a `postgres://` or `postgresql://` DSN for durable shared state. When a run fails or pauses, `markov resume` reloads the original workflow source, rebuilds context from completed steps, skips completed work, and continues from the first incomplete, failed, or paused step.
+Markov checkpoints every run and step in a state store. SQLite is the default; Postgres can be selected with a `postgres://` or `postgresql://` DSN for durable shared state. When a run fails or pauses, `markov resume` reloads the workflow source, rebuilds context from completed steps, skips completed work, and continues from the first incomplete, failed, or paused step.
 
-Use resume for failures that are safe to retry after an external fix: a missing secret, an unavailable API, a transient Kubernetes error, a bad variable value, or a workflow file bug that can be fixed without renaming completed steps.
+Use resume for failures that are safe to retry after an external fix: a missing secret, an unavailable API, a transient Kubernetes error, or a bad variable value. Source edits are governed by the source-integrity policy described below.
 
 ## Basic Flow
 
@@ -73,6 +73,28 @@ Resume depends on three pieces of state:
 
 For directory workflows, the stored source path is the workflow directory. On resume, Markov reloads that directory, including `meta.yaml`, `vars.yaml`, `rules.yaml`, `step_types.yaml` or `step_types/`, and all `workflows/*.yaml` files.
 
+## Source integrity modes
+
+At the initial run, Markov records a SHA-256 digest of the complete workflow
+source tree. For a directory workflow that is the supplied directory; for a
+single YAML file it is the containing directory. The digest covers every regular
+file by relative path, contents, and executable mode, as well as symlink targets.
+This includes `scripts/` used by `script_exec`. Git metadata and the configured
+local state-store files are excluded.
+
+Before resuming, Markov calculates the tree digest again. Choose the policy that
+fits the run:
+
+| Mode | Command | Behavior on source change |
+|------|---------|---------------------------|
+| `warn` | `markov resume <run-id>` | Default. Continue using the changed source, log the drift, store it in run history, and include it in the `run_resumed` callback. Best for interactive iteration. |
+| `strict` | `markov resume <run-id> --source-integrity strict` | Reject the resume with both digests. Restore the original source tree or start a new run. Use in CI and production automation. |
+| `off` | `markov resume <run-id> --source-integrity off` | Do not calculate or compare a digest. Use only for compatibility situations. |
+
+`markov status <run-id>` shows the original digest and the latest resume check.
+Markov keeps the original digest immutable and records every resume check; a
+drifted resume never silently rewrites the run's original source identity.
+
 ## What Gets Skipped or Re-run
 
 On resume:
@@ -86,23 +108,15 @@ On resume:
 
 Resume is step-boundary recovery. If a step started an external side effect and then failed before Markov saved it as completed, that step will run again. Design steps that may be retried to be idempotent where possible.
 
-## Safe Workflow Edits Before Resume
+## Editing a workflow before resume
 
-Some edits are safe between failure and resume:
-
-- Fixing a command, URL, image, header, timeout, or parameter on the failed step.
-- Adding a missing variable or secret.
-- Updating later steps that have not run yet.
-- Adding new steps after the failed point.
-
-Some edits can make resume skip the wrong work or lose context:
-
-- Renaming a completed workflow.
-- Renaming a completed step.
-- Removing a completed `register`, `set_fact`, or artifact-producing step that later steps depend on.
-- Reordering list-based fan-outs that do not use stable keys.
-
-If you need to make structural changes to completed parts of a workflow, prefer starting a new run.
+Use `strict` for runs whose definition must remain reproducible. For local
+iteration, the default `warn` mode deliberately permits quick source changes and
+keeps completed checkpoints, but marks that resume attempt as drifted. Be
+especially careful when renaming completed workflows or steps, removing a
+completed `register`, `set_fact`, or artifact-producing step, or reordering a
+list-based fan-out without stable keys: source-integrity tracking makes the
+change visible, but it cannot make an incompatible checkpoint safe.
 
 ## Fan-Out Resume
 

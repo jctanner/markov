@@ -90,11 +90,11 @@ All events share a common header:
 
 | Event Type | When Fired | Key Fields |
 |------------|------------|------------|
-| `run_started` | Run begins | `workflow_name`, `workflow_file`, `vars`, `forks`, `namespace` |
+| `run_started` | Run begins | `workflow_name`, `workflow_file`, `source_digest`, `vars`, `forks`, `namespace` |
 | `run_completed` | Run succeeds | `workflow_name`, `duration_seconds` |
 | `run_failed` | Run fails | `workflow_name`, `error`, `duration_seconds` |
 | `run_paused` | A gate intentionally pauses the run | `workflow_name`, `step_name`, `fired_rules`, `facts`, `duration_seconds` |
-| `run_resumed` | Run is resumed | `workflow_name`, `completed_steps`, `remaining_steps` |
+| `run_resumed` | Run is resumed | `workflow_name`, `completed_steps`, `remaining_steps`, `source_integrity_mode`, `expected_source_digest`, `observed_source_digest`, `source_drifted` |
 
 ### Step lifecycle events
 
@@ -189,7 +189,7 @@ This sends every event to three destinations simultaneously:
 ## Example: JSONL event output
 
 ```json
-{"timestamp":"2025-01-15T10:30:00.123Z","run_id":"a1b2c3d4","event_type":"run_started","workflow_name":"deploy","workflow_file":"deploy.yaml","vars":{"env":"prod"},"forks":5,"namespace":"default"}
+{"timestamp":"2025-01-15T10:30:00.123Z","run_id":"a1b2c3d4","event_type":"run_started","workflow_name":"deploy","workflow_file":"deploy.yaml","source_digest":"3be8b1...","vars":{"env":"prod"},"forks":5,"namespace":"default"}
 {"timestamp":"2025-01-15T10:30:00.456Z","run_id":"a1b2c3d4","event_type":"step_started","workflow_name":"deploy","step_name":"fetch-config","step_type":"shell_exec","resolved_type":"shell_exec","params":{"command":"cat config.yaml"}}
 {"timestamp":"2025-01-15T10:30:01.789Z","run_id":"a1b2c3d4","event_type":"step_completed","workflow_name":"deploy","step_name":"fetch-config","step_type":"shell_exec","output":{"stdout":"...","rc":0},"duration_seconds":1.333}
 {"timestamp":"2025-01-15T10:30:45.000Z","run_id":"a1b2c3d4","event_type":"run_completed","workflow_name":"deploy","duration_seconds":44.877}

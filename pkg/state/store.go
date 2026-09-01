@@ -30,6 +30,7 @@ const (
 type Run struct {
 	RunID        string
 	WorkflowFile string
+	SourceDigest string
 	Entrypoint   string
 	Status       RunStatus
 	VarsJSON     string
@@ -38,6 +39,17 @@ type Run struct {
 	ForEachKey   string
 	StartedAt    time.Time
 	CompletedAt  *time.Time
+}
+
+// SourceCheck records the workflow source that was present for one resume
+// attempt. SourceDigest on Run remains the original run digest.
+type SourceCheck struct {
+	RunID          string
+	CheckedAt      time.Time
+	Mode           string
+	ExpectedDigest string
+	ObservedDigest string
+	SourceDrifted  bool
 }
 
 type StepResult struct {
@@ -61,6 +73,8 @@ type Store interface {
 	ListRuns(ctx context.Context) ([]*Run, error)
 
 	GetChildRuns(ctx context.Context, parentRunID string) ([]*Run, error)
+	SaveSourceCheck(ctx context.Context, check *SourceCheck) error
+	GetSourceChecks(ctx context.Context, runID string) ([]*SourceCheck, error)
 
 	SaveStep(ctx context.Context, step *StepResult) error
 	GetSteps(ctx context.Context, runID string) ([]*StepResult, error)
@@ -68,18 +82,19 @@ type Store interface {
 }
 
 func OpenStore(stateStore string) (Store, error) {
-	if isPostgresDSN(stateStore) {
+	if IsPostgresDSN(stateStore) {
 		return NewPostgresStore(stateStore)
 	}
 	return NewSQLiteStore(stateStore)
 }
 
-func isPostgresDSN(stateStore string) bool {
+// IsPostgresDSN reports whether stateStore selects the Postgres backend.
+func IsPostgresDSN(stateStore string) bool {
 	return strings.HasPrefix(stateStore, "postgres://") || strings.HasPrefix(stateStore, "postgresql://")
 }
 
 func RedactStoreLocation(stateStore string) string {
-	if !isPostgresDSN(stateStore) {
+	if !IsPostgresDSN(stateStore) {
 		return stateStore
 	}
 	u, err := url.Parse(stateStore)

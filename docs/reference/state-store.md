@@ -65,6 +65,7 @@ Recommended production practice:
 |--------|------|-------------|-------------|
 | `run_id` | TEXT | PRIMARY KEY | Unique run identifier (UUID prefix or `{parentRunID}-{stepName}-{key}`) |
 | `workflow_file` | TEXT | NOT NULL | Source YAML file path |
+| `source_digest` | TEXT | NULL | SHA-256 digest of the original workflow source tree. NULL for runs created before source-integrity support. |
 | `entrypoint` | TEXT | NOT NULL | Workflow name that was executed |
 | `status` | TEXT | NOT NULL | `running`, `paused`, `completed`, or `failed` |
 | `vars_json` | TEXT | NOT NULL, DEFAULT '{}' | Serialized run context variables |
@@ -73,6 +74,20 @@ Recommended production practice:
 | `for_each_key` | TEXT | NULL | Iteration key for for_each sub-runs |
 | `started_at` | TIMESTAMP | NOT NULL | When the run began |
 | `completed_at` | TIMESTAMP | NULL | When the run finished (NULL while running or paused) |
+
+### source_checks table
+
+Each resume attempt writes one source-integrity check. The original digest in
+`runs.source_digest` is never changed.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `run_id` | TEXT | Run being resumed |
+| `checked_at` | TIMESTAMP | When Markov checked the source tree |
+| `mode` | TEXT | `warn`, `strict`, or `off` |
+| `expected_digest` | TEXT | The original run digest, when available |
+| `observed_digest` | TEXT | Digest found at resume time; empty in `off` mode |
+| `source_drifted` | BOOLEAN | Whether the observed digest differs from the original digest |
 
 ### steps table
 
@@ -113,7 +128,7 @@ A step is `skipped` when its `when` condition evaluates to false.
 
 ## Resume flow
 
-Resume picks up a failed or paused run and re-executes it, skipping already-completed steps. Paused runs require explicit variable input (`markov resume <run_id> --var key=value`).
+Resume picks up a failed or paused run and re-executes it, skipping already-completed steps. Paused runs require explicit variable input (`markov resume <run_id> --var key=value`). By default it records and accepts source drift; `--source-integrity strict` rejects an edited workflow source.
 
 ```
 markov resume <run_id>
@@ -122,8 +137,9 @@ markov resume <run_id>
 ### Step-by-step resume process
 
 1. **Load run record** from state store by `run_id`.
-2. **Load all steps** for the run.
-3. **Replay completed step outputs** into the context:
+2. **Fingerprint the current source tree** and save a source-check record according to the selected policy.
+3. **Load all steps** for the run.
+4. **Replay completed step outputs** into the context:
 
    | Step type | Replay behavior |
    |-----------|----------------|
@@ -132,9 +148,9 @@ markov resume <run_id>
    | Steps with artifacts | Restore full step data to `ctx[stepname]` |
    | Steps with output | Restore output map to `ctx[stepname]` |
 
-4. **Apply resume overrides** to the context (required for paused runs), then mark the run as `running` again.
-5. **Fire `run_resumed` event** with completed/remaining step counts.
-6. **Continue execution** -- `executeWorkflow` runs all steps in order; `executeStep` skips already-completed steps.
+5. **Apply resume overrides** to the context (required for paused runs), then mark the run as `running` again.
+6. **Fire `run_resumed` event** with completed/remaining step counts and source-integrity information.
+7. **Continue execution** -- `executeWorkflow` runs all steps in order; `executeStep` skips already-completed steps.
 
 ### Context replay example
 
@@ -160,6 +176,8 @@ Resume:
 3. Otherwise, execute the step normally.
 
 This makes `executeWorkflow` safe to call on a partially-completed workflow -- it simply fast-forwards through completed steps.
+
+`rescue` and `always` lifecycle handlers use state names prefixed with their section, such as `rescue/report-failure` and `always/cleanup`. They deliberately run again when a resumed run fails again, even if the handler completed during an earlier failed attempt.
 
 ## for_each resume
 

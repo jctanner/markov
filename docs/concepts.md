@@ -47,6 +47,12 @@ All string values in `params`, `vars`, `when`, `facts`, artifact `path`, and `ms
 
 The `when` field on any step takes a boolean expression. If it evaluates to false, the step is skipped — not failed. Skipped steps don't block downstream execution.
 
+## Failure Handling and Teardown
+
+Workflows can include `rescue` and `always` step lists alongside their normal `steps`. If a normal step fails, Markov runs `rescue` and then `always`; after successful normal steps, it runs `always` only. Every handler in each list gets a chance to run even if an earlier handler fails. The run remains failed when any normal or handler step fails.
+
+A durable gate `pause` is intentionally different from failure: it does not run either lifecycle section because the run is still waiting to be resumed. See [Workflow File Reference](reference/workflow-file.md#failure-handling-and-teardown) for the full semantics and example.
+
 ## Fan-Out and Concurrency
 
 `for_each` iterates over a list, running a step or sub-workflow per item with concurrency control. The `forks` setting (default 5) limits how many items execute simultaneously. Each iteration gets its own copy of the context plus the current item.

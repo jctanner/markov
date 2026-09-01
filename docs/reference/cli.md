@@ -99,6 +99,7 @@ markov resume <run_id> [flags]
 |------|------|---------|-------------|
 | `--state-store path-or-dsn` | string | `MARKOV_STATE_STORE`, `/tmp/markov-state.db`, or `./markov-state.db` | SQLite path or Postgres DSN. |
 | `--var key=value` | string (repeatable) | -- | Override a variable before resuming. Required for paused runs. Values are parsed with the same coercion as `markov run --var`. |
+| `--source-integrity mode` | `warn`, `strict`, or `off` | `warn` | How to handle a workflow source-tree digest mismatch. `warn` resumes and records drift; `strict` rejects the resume; `off` skips the comparison. |
 
 **Examples:**
 
@@ -111,6 +112,9 @@ markov resume abc123 --var approved=true
 
 # Resume using a specific state store
 markov resume abc123 --state-store /data/markov.db
+
+# Require the original workflow directory and scripts to be unchanged
+markov resume abc123 --source-integrity strict
 ```
 
 ---
@@ -142,9 +146,13 @@ markov status <run_id> [flags]
 Run:        abc123
 Workflow:   main
 Status:     completed
+Source:     3be8b1...
 Started:    2026-05-05 10:30:00
 Completed:  2026-05-05 10:32:15
 ```
+
+When a `warn` resume accepted source drift, status also shows the latest source
+check and its observed digest.
 
 With `--steps`:
 

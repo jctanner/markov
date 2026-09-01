@@ -126,7 +126,9 @@ A workflow is a named sequence of steps. Workflows can invoke other workflows as
 | Name | `name` | string | yes | -- | Unique workflow name. Referenced by `entrypoint` and by steps that invoke sub-workflows. |
 | Description | `description` | string | no | `""` | Human-readable description of what this workflow does. |
 | Vars | `vars` | map[string]any | no | `{}` | Workflow-scoped variables. Non-nil values override global vars. Use `null` values to declare required variables that must be passed by the caller. |
-| Steps | `steps` | Step[] | yes | -- | Ordered list of steps to execute. |
+| Steps | `steps` | Step[] | yes | -- | Ordered list of normal steps to execute. |
+| Rescue | `rescue` | Step[] | no | `[]` | Ordered failure handlers. Runs after a normal step fails, before `always`. |
+| Always | `always` | Step[] | no | `[]` | Ordered teardown handlers. Runs after normal success or failure. |
 
 ```yaml
 workflows:
@@ -141,7 +143,35 @@ workflows:
         params:
           command: make
           args: ["build"]
+    rescue:
+      - name: report-failure
+        type: shell_exec
+        params:
+          command: "echo 'deployment failed'"
+    always:
+      - name: cleanup
+        type: shell_exec
+        params:
+          command: "make clean"
 ```
+
+### Failure handling and teardown
+
+`rescue` and `always` use the same step shape and capabilities as `steps`, including `when`, `register`, sub-workflows, and step types. Step names must be unique across all three sections of a workflow.
+
+Markov executes lifecycle sections as follows:
+
+1. Execute `steps` in order.
+2. If a normal step fails, execute every `rescue` step in order.
+3. After normal success or failure, execute every `always` step in order.
+4. Report the run as failed if the main workflow, a rescue handler, or an always handler failed. Handler errors are included with the original failure.
+
+Markov continues through the remaining handlers when a rescue or always step fails, so cleanup steps later in the list still get a chance to run. A failure in `always` after otherwise successful normal steps fails the run; it does not invoke `rescue`.
+
+A durable `pause` is nonterminal, so neither section runs while the workflow waits for `markov resume`. This preserves resources such as approval locks that must remain in place until the run has actually succeeded or failed.
+Lifecycle handlers themselves must finish: a handler that requests a `pause` causes the run to fail rather than suspending teardown.
+
+Lifecycle step records are stored as `rescue/<step-name>` and `always/<step-name>`. Unlike normal completed steps, they run again if a resumed run fails again, ensuring teardown is repeated for each terminal attempt.
 
 ---
 
