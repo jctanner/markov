@@ -36,21 +36,45 @@ func (m *mockCallback) getEvents() []string {
 	return result
 }
 
-func (m *mockCallback) OnRunStarted(e callback.RunStartedEvent) error     { return m.record("run_started", e) }
-func (m *mockCallback) OnRunCompleted(e callback.RunCompletedEvent) error  { return m.record("run_completed", e) }
-func (m *mockCallback) OnRunFailed(e callback.RunFailedEvent) error       { return m.record("run_failed", e) }
-func (m *mockCallback) OnRunPaused(e callback.RunPausedEvent) error       { return m.record("run_paused", e) }
-func (m *mockCallback) OnRunResumed(e callback.RunResumedEvent) error     { return m.record("run_resumed", e) }
-func (m *mockCallback) OnStepStarted(e callback.StepStartedEvent) error   { return m.record("step_started", e) }
-func (m *mockCallback) OnStepCompleted(e callback.StepCompletedEvent) error { return m.record("step_completed", e) }
-func (m *mockCallback) OnStepFailed(e callback.StepFailedEvent) error     { return m.record("step_failed", e) }
-func (m *mockCallback) OnStepSkipped(e callback.StepSkippedEvent) error   { return m.record("step_skipped", e) }
-func (m *mockCallback) OnJobCreated(e callback.JobCreatedEvent) error   { return m.record("job_created", e) }
-func (m *mockCallback) OnGateEvaluated(e callback.GateEvaluatedEvent) error { return m.record("gate_evaluated", e) }
-func (m *mockCallback) OnSubRunStarted(e callback.SubRunStartedEvent) error { return m.record("sub_run_started", e) }
-func (m *mockCallback) OnSubRunCompleted(e callback.SubRunCompletedEvent) error { return m.record("sub_run_completed", e) }
-func (m *mockCallback) OnSubRunFailed(e callback.SubRunFailedEvent) error { return m.record("sub_run_failed", e) }
-func (m *mockCallback) Close() error                                      { return nil }
+func (m *mockCallback) OnRunStarted(e callback.RunStartedEvent) error {
+	return m.record("run_started", e)
+}
+func (m *mockCallback) OnRunCompleted(e callback.RunCompletedEvent) error {
+	return m.record("run_completed", e)
+}
+func (m *mockCallback) OnRunFailed(e callback.RunFailedEvent) error { return m.record("run_failed", e) }
+func (m *mockCallback) OnRunPaused(e callback.RunPausedEvent) error { return m.record("run_paused", e) }
+func (m *mockCallback) OnRunResumed(e callback.RunResumedEvent) error {
+	return m.record("run_resumed", e)
+}
+func (m *mockCallback) OnStepStarted(e callback.StepStartedEvent) error {
+	return m.record("step_started", e)
+}
+func (m *mockCallback) OnStepCompleted(e callback.StepCompletedEvent) error {
+	return m.record("step_completed", e)
+}
+func (m *mockCallback) OnStepFailed(e callback.StepFailedEvent) error {
+	return m.record("step_failed", e)
+}
+func (m *mockCallback) OnStepSkipped(e callback.StepSkippedEvent) error {
+	return m.record("step_skipped", e)
+}
+func (m *mockCallback) OnJobCreated(e callback.JobCreatedEvent) error {
+	return m.record("job_created", e)
+}
+func (m *mockCallback) OnGateEvaluated(e callback.GateEvaluatedEvent) error {
+	return m.record("gate_evaluated", e)
+}
+func (m *mockCallback) OnSubRunStarted(e callback.SubRunStartedEvent) error {
+	return m.record("sub_run_started", e)
+}
+func (m *mockCallback) OnSubRunCompleted(e callback.SubRunCompletedEvent) error {
+	return m.record("sub_run_completed", e)
+}
+func (m *mockCallback) OnSubRunFailed(e callback.SubRunFailedEvent) error {
+	return m.record("sub_run_failed", e)
+}
+func (m *mockCallback) Close() error { return nil }
 
 type mockExec struct {
 	output map[string]any
@@ -280,9 +304,9 @@ func TestCallbackForEach(t *testing.T) {
 				Name: "main",
 				Steps: []parser.Step{
 					{
-						Name:    "process_all",
-						ForEach: "items",
-						As:      "item",
+						Name:     "process_all",
+						ForEach:  "items",
+						As:       "item",
 						Workflow: "process_item",
 					},
 				},
@@ -413,21 +437,33 @@ func TestCallbackErrorsDontFailWorkflow(t *testing.T) {
 
 type errorCallback struct{}
 
-func (e *errorCallback) OnRunStarted(callback.RunStartedEvent) error        { return fmt.Errorf("cb error") }
-func (e *errorCallback) OnRunCompleted(callback.RunCompletedEvent) error    { return fmt.Errorf("cb error") }
-func (e *errorCallback) OnRunFailed(callback.RunFailedEvent) error          { return fmt.Errorf("cb error") }
-func (e *errorCallback) OnRunPaused(callback.RunPausedEvent) error          { return fmt.Errorf("cb error") }
-func (e *errorCallback) OnRunResumed(callback.RunResumedEvent) error        { return fmt.Errorf("cb error") }
-func (e *errorCallback) OnStepStarted(callback.StepStartedEvent) error      { return fmt.Errorf("cb error") }
-func (e *errorCallback) OnStepCompleted(callback.StepCompletedEvent) error  { return fmt.Errorf("cb error") }
-func (e *errorCallback) OnStepFailed(callback.StepFailedEvent) error        { return fmt.Errorf("cb error") }
-func (e *errorCallback) OnStepSkipped(callback.StepSkippedEvent) error      { return fmt.Errorf("cb error") }
-func (e *errorCallback) OnJobCreated(callback.JobCreatedEvent) error        { return fmt.Errorf("cb error") }
-func (e *errorCallback) OnGateEvaluated(callback.GateEvaluatedEvent) error  { return fmt.Errorf("cb error") }
-func (e *errorCallback) OnSubRunStarted(callback.SubRunStartedEvent) error  { return fmt.Errorf("cb error") }
-func (e *errorCallback) OnSubRunCompleted(callback.SubRunCompletedEvent) error { return fmt.Errorf("cb error") }
-func (e *errorCallback) OnSubRunFailed(callback.SubRunFailedEvent) error    { return fmt.Errorf("cb error") }
-func (e *errorCallback) Close() error                                        { return nil }
+func (e *errorCallback) OnRunStarted(callback.RunStartedEvent) error { return fmt.Errorf("cb error") }
+func (e *errorCallback) OnRunCompleted(callback.RunCompletedEvent) error {
+	return fmt.Errorf("cb error")
+}
+func (e *errorCallback) OnRunFailed(callback.RunFailedEvent) error     { return fmt.Errorf("cb error") }
+func (e *errorCallback) OnRunPaused(callback.RunPausedEvent) error     { return fmt.Errorf("cb error") }
+func (e *errorCallback) OnRunResumed(callback.RunResumedEvent) error   { return fmt.Errorf("cb error") }
+func (e *errorCallback) OnStepStarted(callback.StepStartedEvent) error { return fmt.Errorf("cb error") }
+func (e *errorCallback) OnStepCompleted(callback.StepCompletedEvent) error {
+	return fmt.Errorf("cb error")
+}
+func (e *errorCallback) OnStepFailed(callback.StepFailedEvent) error   { return fmt.Errorf("cb error") }
+func (e *errorCallback) OnStepSkipped(callback.StepSkippedEvent) error { return fmt.Errorf("cb error") }
+func (e *errorCallback) OnJobCreated(callback.JobCreatedEvent) error   { return fmt.Errorf("cb error") }
+func (e *errorCallback) OnGateEvaluated(callback.GateEvaluatedEvent) error {
+	return fmt.Errorf("cb error")
+}
+func (e *errorCallback) OnSubRunStarted(callback.SubRunStartedEvent) error {
+	return fmt.Errorf("cb error")
+}
+func (e *errorCallback) OnSubRunCompleted(callback.SubRunCompletedEvent) error {
+	return fmt.Errorf("cb error")
+}
+func (e *errorCallback) OnSubRunFailed(callback.SubRunFailedEvent) error {
+	return fmt.Errorf("cb error")
+}
+func (e *errorCallback) Close() error { return nil }
 
 func TestCallbackZeroCallbacksWorks(t *testing.T) {
 	wfFile := &parser.WorkflowFile{
