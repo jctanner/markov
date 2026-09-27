@@ -1,0 +1,173 @@
+{
+  "run_id": "abc6ecfe",
+  "artifact_directory": "/tmp/markov-jev-live-hd9q8av8",
+  "model_info": {
+    "models": [
+      {
+        "name": "kev-latest",
+        "description": "Kev pointer head on Qwen/Qwen3.5-0.8B-Base, serving jaredpalmer/kev-0.8b@9a45d25eb2ab761841196625383fa1dff0e56c1e at temperature 2.35",
+        "release_date": "2026-09-27",
+        "run": "jaredpalmer/kev-0.8b@9a45d25eb2ab761841196625383fa1dff0e56c1e",
+        "base": "Qwen/Qwen3.5-0.8B-Base",
+        "lora": 16,
+        "device": "cpu",
+        "backend": "torch",
+        "dtype": "float32",
+        "temperature": 2.3510958125672174,
+        "cuda_graphs": null,
+        "prefix_cache": {
+          "size": 4,
+          "min_state_tokens": 0,
+          "max_tokens": 65536,
+          "hits": 0,
+          "misses": 0,
+          "cached_states": 0,
+          "oom_retries": 0
+        },
+        "batches": {
+          "count": 0,
+          "requests": 0,
+          "queued": 0
+        }
+      },
+      {
+        "name": "jev-latest",
+        "description": "Kev pointer head on Qwen/Qwen3.5-0.8B-Base, serving jaredpalmer/kev-0.8b@9a45d25eb2ab761841196625383fa1dff0e56c1e at temperature 2.35",
+        "release_date": "2026-09-27",
+        "run": "jaredpalmer/kev-0.8b@9a45d25eb2ab761841196625383fa1dff0e56c1e",
+        "base": "Qwen/Qwen3.5-0.8B-Base",
+        "lora": 16,
+        "device": "cpu",
+        "backend": "torch",
+        "dtype": "float32",
+        "temperature": 2.3510958125672174,
+        "cuda_graphs": null,
+        "prefix_cache": {
+          "size": 4,
+          "min_state_tokens": 0,
+          "max_tokens": 65536,
+          "hits": 0,
+          "misses": 0,
+          "cached_states": 0,
+          "oom_retries": 0
+        },
+        "batches": {
+          "count": 0,
+          "requests": 0,
+          "queued": 0
+        }
+      }
+    ]
+  },
+  "run_seconds": 2.313,
+  "resume_seconds": 0.026,
+  "inference_requests": 3,
+  "auth_missing_and_wrong": 401,
+  "markov_wrong_key_failed": true,
+  "resume_with_server_stopped": "passed",
+  "receipts": [
+    {
+      "answers": {
+        "result": {
+          "noul": 0.7994,
+          "type": "noul"
+        }
+      },
+      "decision": {
+        "fingerprint": "41f586c67caa7c4ea1ea724aa9bc55b4768d4f1bc7604f09e60e8ee3694a1eef",
+        "name": "billing",
+        "parent_step": "billing_route",
+        "version": "1"
+      },
+      "latency_ms": 452.9,
+      "metadata": {
+        "attempts": 1,
+        "connection": "local_kev",
+        "elapsed_seconds": 0.455857107,
+        "request_fingerprint": "320203c4858fab88da2f17d3370e278da21edfbfdbb9318bf442203a6bb74bd3",
+        "request_id": "cad6df1d235c40c1b4feec608fca0d74",
+        "requested_model": "kev-latest"
+      },
+      "model": "kev-latest",
+      "usage": {
+        "input_tokens": 28,
+        "output_tokens": 22
+      }
+    },
+    {
+      "answers": {
+        "result": {
+          "noul": 0.7994,
+          "type": "noul"
+        }
+      },
+      "decision": {
+        "fingerprint": "77c3522ecaa92af787ddf65931a009e5af80d66b810309fd495582601b059449",
+        "name": "billing",
+        "parent_step": "review",
+        "version": "1"
+      },
+      "latency_ms": 445.6,
+      "metadata": {
+        "attempts": 1,
+        "connection": "local_kev",
+        "elapsed_seconds": 0.448803289,
+        "request_fingerprint": "320203c4858fab88da2f17d3370e278da21edfbfdbb9318bf442203a6bb74bd3",
+        "request_id": "9a700c410e314f6eabfb3cc23ca78f12",
+        "requested_model": "kev-latest"
+      },
+      "model": "kev-latest",
+      "usage": {
+        "input_tokens": 28,
+        "output_tokens": 22
+      }
+    },
+    {
+      "answers": {
+        "billing": {
+          "noul": 0.7994,
+          "type": "noul"
+        },
+        "department": {
+          "choice": "billing",
+          "confidence": 0.9344,
+          "probabilities": {
+            "billing": 0.9563,
+            "shipping": 0.0138,
+            "technical": 0.0299
+          },
+          "type": "choice"
+        },
+        "urgency": {
+          "confidence": 0.4978,
+          "legend": {
+            "0": "Routine",
+            "1": "Soon",
+            "2": "Immediate"
+          },
+          "probabilities": {
+            "0": 0.0588,
+            "1": 0.2171,
+            "2": 0.724
+          },
+          "score": 1.6652,
+          "type": "score"
+        }
+      },
+      "latency_ms": 1374.3,
+      "metadata": {
+        "attempts": 1,
+        "connection": "local_kev",
+        "elapsed_seconds": 1.380030654,
+        "request_fingerprint": "21e5ff2d3bfe655a0df9d1ab248cc94dac2d5a56b63fb2fc2e1beeac37a86132",
+        "request_id": "de6943d3744046c6ae6649453c2cc31d",
+        "requested_model": "kev-latest"
+      },
+      "model": "kev-latest",
+      "usage": {
+        "input_tokens": 74,
+        "output_tokens": 174
+      }
+    }
+  ]
+}

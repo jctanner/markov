@@ -34,14 +34,8 @@ func (e *Engine) evaluateGate(runID string, ruleNames []string, gateFacts map[st
 		evalCtx[k] = v
 	}
 
-	if len(gateFacts) > 0 {
-		rendered, err := e.tmpl.RenderMap(gateFacts, runCtx)
-		if err != nil {
-			return nil, fmt.Errorf("rendering gate facts: %w", err)
-		}
-		for k, v := range rendered {
-			evalCtx[k] = v
-		}
+	for k, v := range gateFacts {
+		evalCtx[k] = v
 	}
 
 	facts := NewFactStore(evalCtx)
@@ -118,10 +112,10 @@ func (e *Engine) evaluateGate(runID string, ruleNames []string, gateFacts map[st
 		runCtx[k] = v
 	}
 
-	// Merge gate-level facts into runCtx
-	if len(gateFacts) > 0 {
-		rendered, _ := e.tmpl.RenderMap(gateFacts, runCtx)
-		for k, v := range rendered {
+	// Preserve resolved input facts in the receipt for resume. Rule assignments win.
+	for k, v := range gateFacts {
+		if _, assigned := setFacts[k]; !assigned {
+			setFacts[k] = v
 			runCtx[k] = v
 		}
 	}

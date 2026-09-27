@@ -18,6 +18,7 @@
 
 ## Completed Tasks
 
+- [First-class Jev support](docs/tasks/done/jev-support.md)
 - [Make all current examples validate](docs/tasks/done/validate-all-examples.md)
 - [Add strict YAML validation](docs/tasks/done/strict-yaml-validation.md)
 - [Implement source integrity modes](docs/tasks/done/source-integrity-modes.md)
@@ -41,3 +42,5 @@
 
 - [ADR-0001: Directory Workflow File Layout](docs/decisions/ADR-0001-directory-workflow-layout.md)
 - [ADR-0002: Source Integrity Modes for Resumable Workflow Runs](docs/decisions/ADR-0002-source-integrity-modes.md)
+
+- [ADR-0003: Durable Jev decisions](docs/decisions/ADR-0003-durable-jev-decisions.md)

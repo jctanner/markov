@@ -449,6 +449,7 @@ func buildExecutors(wf *parser.WorkflowFile) (map[string]executor.Executor, erro
 		"script_exec":  executor.NewScriptExec(),
 		"prompt":       executor.NewPrompt(),
 		"http_request": executor.NewHTTPRequest(),
+		"jev":          executor.NewJev(wf.Connections),
 	}
 
 	namespace := resolveNamespace(wf.Namespace, flagNamespace)

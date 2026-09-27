@@ -581,4 +581,8 @@ workflows:
         params:
           args: ["echo 'releasing {{ service }} to {{ env }}'"]
 ```
+
+## Jev support
+
+Top-level `connections` and `decisions` configure Jev endpoints and reusable questions. Directory workflows support optional `connections.yaml` and `decisions.yaml`. See [Jev decisions](jev.md) for the schema.
 {% endraw %}

@@ -1,13 +1,17 @@
 package parser
 
+import "github.com/jctanner/markov/pkg/jev"
+
 type WorkflowFile struct {
-	Entrypoint string              `yaml:"entrypoint"`
-	Namespace  string              `yaml:"namespace"`
-	Forks      int                 `yaml:"forks"`
-	Vars       map[string]any      `yaml:"vars"`
-	Rules      []Rule              `yaml:"rules"`
-	StepTypes  map[string]StepType `yaml:"step_types"`
-	Workflows  []Workflow          `yaml:"workflows"`
+	Connections map[string]jev.Connection `yaml:"connections"`
+	Decisions   map[string]jev.Decision   `yaml:"decisions"`
+	Entrypoint  string                    `yaml:"entrypoint"`
+	Namespace   string                    `yaml:"namespace"`
+	Forks       int                       `yaml:"forks"`
+	Vars        map[string]any            `yaml:"vars"`
+	Rules       []Rule                    `yaml:"rules"`
+	StepTypes   map[string]StepType       `yaml:"step_types"`
+	Workflows   []Workflow                `yaml:"workflows"`
 	// ScriptDir is the directory used as the base for script_exec path values.
 	// It is set by the parser and is not part of the workflow YAML schema.
 	ScriptDir string `yaml:"-"`

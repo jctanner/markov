@@ -279,3 +279,7 @@ markov diagram <run_id>
 ```
 
 This walks the run tree (parent and children) and produces a Mermaid-formatted output showing the execution flow.
+
+## Jev support
+
+Inline and gate decisions persist internal `__jev__/...` step receipts, including skipped-condition decisions. The prefix is reserved and these records are not restored as ordinary template variables. See [Jev decisions](jev.md).

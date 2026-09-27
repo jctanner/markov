@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -60,6 +61,9 @@ func ParseDir(path string) (*WorkflowFile, error) {
 		return nil, err
 	}
 	wf.StepTypes = stepTypes
+	if err := readJevDefinitions(path, &wf); err != nil {
+		return nil, err
+	}
 
 	workflowDir := filepath.Join(path, "workflows")
 	entries, err := os.ReadDir(workflowDir)
@@ -208,6 +212,9 @@ func mergeStepTypesFile(path string, stepTypes map[string]StepType) error {
 }
 
 func validate(wf *WorkflowFile) error {
+	if err := validateJev(wf); err != nil {
+		return err
+	}
 	if wf.Forks <= 0 {
 		wf.Forks = 5
 	}
@@ -274,6 +281,9 @@ func validateWorkflowSteps(wf *WorkflowFile, workflow *Workflow) error {
 
 func validateSteps(wf *WorkflowFile, workflowName, section string, steps []Step, stepNames map[string]bool) error {
 	for _, s := range steps {
+		if strings.HasPrefix(s.Name, "__jev__/") {
+			return fmt.Errorf("step name prefix __jev__/ is reserved")
+		}
 		if s.Name == "" {
 			return fmt.Errorf("workflow %q, %s: step missing name", workflowName, section)
 		}
@@ -300,6 +310,9 @@ func validateSteps(wf *WorkflowFile, workflowName, section string, steps []Step,
 			}
 		}
 
+		if err := validateJevStep(wf, s); err != nil {
+			return fmt.Errorf("workflow %q, step %q: %w", workflowName, s.Name, err)
+		}
 		if s.Type == "gate" {
 			if len(s.Rules) == 0 {
 				return fmt.Errorf("workflow %q, step %q: gate must reference at least one rule", workflowName, s.Name)
@@ -315,6 +328,7 @@ func validateSteps(wf *WorkflowFile, workflowName, section string, steps []Step,
 }
 
 var primitives = map[string]bool{
+	"jev":           true,
 	"k8s_job":       true,
 	"k8s_job_wait":  true,
 	"http_request":  true,

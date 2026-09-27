@@ -1,0 +1,132 @@
+# Start Kev on localhost:18009, and set KEV_API_KEY in the Markov process.
+# Run:    markov run examples/jev.yaml --state-store /tmp/markov-jev.db
+# Resume: markov resume RUN_ID --var approved=true --state-store /tmp/markov-jev.db
+# Begin execution at the workflow named main below.
+entrypoint: main
+
+# Named API connections keep endpoint and credential settings out of each step.
+connections:
+  # Use the local Kev server through the Jev-compatible API. The server must
+  # expect the same bearer key that Markov reads from its KEV_API_KEY environment.
+  local_kev:
+    type: jev
+    base_url: http://127.0.0.1:18009
+    model: kev-latest
+    api_key_env: KEV_API_KEY
+    timeout: 120  # Seconds, including request queuing and retries.
+    concurrency: 1  # Share one in-flight request across this engine's callers.
+
+# Reusable question definitions for inline expressions and gate facts.
+decisions:
+  # Noul returns a number from 0 to 1. Version identifies this question's rubric;
+  # it is distinct from the model version selected by the connection.
+  billing:
+    connection: local_kev
+    version: "1"
+    type: noul
+    instructions: Is this about a billing problem?
+
+# Initial workflow context. Resume overrides approved with explicit human input.
+vars:
+  ticket: "I was charged twice. Please refund the duplicate charge immediately."
+  approved: false
+  decision_revision: "1"  # Change to refresh the gate decision when reevaluated.
+
+# Deterministic gate policies consume workflow facts after model calls finish.
+# This example always requires approval, regardless of the model's prediction.
+rules:
+  # Pause durably until the operator resumes with approved=true.
+  - name: await_review
+    when: "approved != true"
+    action: pause
+    # Record why downstream execution is still waiting.
+    set_fact:
+      review_required: true
+
+  # On resume, explicit approval lets the gate continue without new inference
+  # when the decision's inputs, definition, connection, and refresh token match.
+  - name: reviewed
+    when: "approved == true"
+    action: continue
+    # Clear the review flag for downstream checks.
+    set_fact:
+      review_required: false
+
+workflows:
+  - name: main
+    # Each step completes before the next begins; the review gate can pause here.
+    steps:
+      # Ask three questions in one API request and register the full response
+      # as triage, including answers, distributions, usage, and request metadata.
+      - name: triage
+        type: jev
+        timeout: 120
+        register: triage
+        # Select a connection and render the ticket as the shared question state.
+        params:
+          connection: local_kev
+          state: "{{ ticket }}"
+          # Named answers will be available under triage.answers.<question>.
+          questions:
+            # Choice selects one declared team and returns option probabilities.
+            department:
+              type: choice
+              instructions: Which team should handle this?
+              # Keys are possible return values; descriptions explain each option.
+              criteria:
+                billing: Payments, charges, refunds
+                technical: Software bugs
+                shipping: Delivery status
+            # This question belongs to the native request; it does not reference
+            # the reusable billing definition above despite sharing its name.
+            billing:
+              type: noul
+              instructions: Is this about a billing problem?
+            # Score evaluates an ordered rubric and returns a numeric score.
+            urgency:
+              type: score
+              instructions: How urgent is this request?
+              # Levels have indices 0, 1, and 2; the score can be fractional.
+              criteria: [Routine, Soon, Immediate]
+
+      # Call the reusable billing decision in a condition. The 0.7 threshold is
+      # illustrative policy, not a correctness guarantee. Its decision receipt
+      # is persisted even if the condition is false and this step is skipped.
+      - name: billing_route
+        type: set_fact
+        when: "jev.noul('billing', ticket) >= 0.7"
+        # Set this flag only when the condition passes; it may otherwise be absent.
+        vars:
+          routed_to_billing: true
+
+      # Resolve model-backed facts first, then evaluate ordinary Grule rules.
+      # Forward chaining reuses the resolved facts and makes no model calls.
+      - name: review
+        type: gate
+        timeout: 120
+        # Bind a scalar model result into the gate's fact context and receipt.
+        facts:
+          # This gate has its own decision identity, separate from billing_route.
+          # Unchanged inputs reuse its saved answer when the paused gate resumes.
+          billing_probability:
+            decision: billing
+            state: "{{ ticket }}"
+            select: noul
+            refresh: "{{ decision_revision }}"
+        # Choose pause or continue using the explicit approval rules above.
+        rules: [await_review, reviewed]
+
+      # After approval, confirm registered answers and resolved facts survived
+      # pause/resume. These checks validate structure and state, not accuracy.
+      - name: verify
+        type: assert
+        # Every condition must be true or the workflow fails.
+        that:
+          # The selected department must be one of the supplied Choice options.
+          - "triage.answers.department.choice == 'billing' or triage.answers.department.choice == 'technical' or triage.answers.department.choice == 'shipping'"
+          # The three-level Score rubric permits values from 0 through 2.
+          - "triage.answers.urgency.score >= 0 and triage.answers.urgency.score <= 2"
+          # The resolved Noul value must remain within its numeric range.
+          - "billing_probability >= 0 and billing_probability <= 1"
+          # The approval rule must have cleared the review flag.
+          - "not review_required"

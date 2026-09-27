@@ -334,4 +334,8 @@ workflows:
 - `--var score=85 --var severity=critical` -- Both rules evaluate. Both fire. `rule_reject` has salience 20 vs salience 10, so its action wins. Gate action: `skip`. Decision: `rejected`.
 
 - `--var score=50 --var severity=low` -- Neither rule fires (score < 70, severity not critical). Gate action: `continue` (default). No decision facts are set.
+
+## Jev support
+
+Gate `facts` can resolve named Jev decisions before Grule executes. Rules consume the resulting ordinary facts; reevaluation performs no API calls. See [Jev decisions](jev.md).
 {% endraw %}

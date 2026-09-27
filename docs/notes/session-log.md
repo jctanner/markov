@@ -61,3 +61,7 @@ Verified:
 - Platform `make host-rebuild-markov` imported the rebuilt image into k3s.
 - Live run `markov-run-622d5874` skipped `main.run_pipeline` for
   `--var run_pipeline=false` and created no pipeline child steps.
+
+## 2026-09-27 — Jev integration
+
+Implemented named connections/decisions, native Jev steps, durable inline conditions/assertions, and decision-backed gate facts. Added optional directory definition files and documentation. Verified against authenticated CPU Kev-0.8B, including a successful resume after stopping the server. All tests/build/vet and 22 example validations pass; full formatting check has four unchanged baseline failures. See [validation](jev-kev-validation.md) and [completed task](../tasks/done/jev-support.md).

@@ -914,4 +914,8 @@ This type is recognized by the parser as a valid primitive, so workflow YAML ref
     prompt: "Classify this issue..."
   register: classification
 ```
+
+## Jev support
+
+`type: jev` calls a configured Jev-compatible API and registers structured answers. See [Jev decisions](jev.md) for parameters, response metadata, and errors.
 {% endraw %}

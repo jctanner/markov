@@ -256,4 +256,8 @@ After template rendering in `set_fact` steps, string results are coerced to nati
 | Anything else | `string` | Kept as-is |
 
 Coercion order matters: integer parsing is attempted before float parsing. JSON parsing is only attempted if the string starts with `[` or `{`.
+
+## Jev support
+
+Step `when` and `assert.that` support durable `jev.noul`, `jev.choice`, and `jev.score` calls against named definitions. These helpers are not general template filters. See [Jev decisions](jev.md).
 {% endraw %}

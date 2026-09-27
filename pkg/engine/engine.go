@@ -92,6 +92,12 @@ func IsPaused(err error) bool {
 }
 
 func New(file *parser.WorkflowFile, store state.Store, executors map[string]executor.Executor) *Engine {
+	if executors == nil {
+		executors = map[string]executor.Executor{}
+	}
+	if _, ok := executors["jev"]; !ok {
+		executors["jev"] = executor.NewJev(file.Connections)
+	}
 	forks := file.Forks
 	if forks <= 0 {
 		forks = 5
@@ -282,6 +288,9 @@ func (e *Engine) ResumeWithVars(ctx context.Context, runID string, vars map[stri
 		return err
 	}
 	for _, s := range steps {
+		if strings.HasPrefix(s.StepName, "__jev__/") {
+			continue
+		}
 		if s.Status == state.StepCompleted {
 			if isSetFactStep(wf, s.StepName) && s.OutputJSON != "" {
 				var facts map[string]any
@@ -516,9 +525,9 @@ func (e *Engine) executeStepWithOptions(ctx context.Context, runID string, workf
 	}
 
 	if step.When != "" {
-		ok, err := e.tmpl.EvalBool(step.When, runCtx)
+		ok, err := e.evalDecisionBool(ctx, runID, workflowName, stateStepName, step.When, runCtx, step.Timeout)
 		if err != nil {
-			return fmt.Errorf("evaluating when: %w", err)
+			return e.failStep(ctx, runID, workflowName, stateStepName, step.Type, time.Now(), fmt.Errorf("evaluating when: %w", err))
 		}
 		if !ok {
 			log.Printf("[run:%s] skipping step %q (when: %q is false)", runID, step.Name, step.When)
@@ -684,7 +693,7 @@ func (e *Engine) executeStepWithOptions(ctx context.Context, runID string, workf
 			return e.failStep(ctx, runID, workflowName, stateStepName, base, now, fmt.Errorf("assert step has no conditions defined"))
 		}
 		for _, expr := range step.That {
-			ok, err := e.tmpl.EvalBool(expr, runCtx)
+			ok, err := e.evalDecisionBool(ctx, runID, workflowName, stateStepName, expr, runCtx, step.Timeout)
 			if err != nil {
 				return e.failStep(ctx, runID, workflowName, stateStepName, base, now, fmt.Errorf("evaluating assertion %q: %w", expr, err))
 			}
@@ -721,7 +730,11 @@ func (e *Engine) executeStepWithOptions(ctx context.Context, runID string, workf
 
 	if base == "gate" {
 		log.Printf("[run:%s] evaluating gate %q (%d rules)", runID, step.Name, len(step.Rules))
-		result, err := e.evaluateGate(runID, step.Rules, step.Facts, runCtx)
+		resolvedFacts, err := e.resolveDecisionFacts(ctx, runID, workflowName, stateStepName, step.Facts, runCtx, step.Timeout)
+		if err != nil {
+			return e.failStep(ctx, runID, workflowName, stateStepName, base, now, err)
+		}
+		result, err := e.evaluateGate(runID, step.Rules, resolvedFacts, runCtx)
 		if err != nil {
 			return e.failStep(ctx, runID, workflowName, stateStepName, base, now, fmt.Errorf("gate evaluation: %w", err))
 		}
@@ -922,7 +935,7 @@ func (e *Engine) executeStepWithOptions(ctx context.Context, runID string, workf
 		artifactsJSON = string(aj)
 	}
 	completed := time.Now()
-	e.store.SaveStep(ctx, &state.StepResult{
+	if err := e.store.SaveStep(ctx, &state.StepResult{
 		RunID:         runID,
 		WorkflowName:  workflowName,
 		StepName:      stateStepName,
@@ -931,7 +944,9 @@ func (e *Engine) executeStepWithOptions(ctx context.Context, runID string, workf
 		ArtifactsJSON: artifactsJSON,
 		StartedAt:     &now,
 		CompletedAt:   &completed,
-	})
+	}); err != nil {
+		return fmt.Errorf("persisting completed step %q: %w", stateStepName, err)
+	}
 
 	e.fireEvent(func(cb callback.Callback) error {
 		return cb.OnStepCompleted(callback.StepCompletedEvent{

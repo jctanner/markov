@@ -35,10 +35,13 @@ Complete, field-by-field documentation for the markov YAML DSL:
 - [CLI](reference/cli.md) — all commands and flags
 - [State Store](reference/state-store.md) — checkpoint/resume, SQLite and Postgres backends, resume flow
 
+- [Jev decisions](reference/jev.md) — connections, native steps, inline conditions, and decision-backed gates
+
 ## Guides
 
 Practical how-to guides with complete examples:
 
+- [Testing with CPU Kev](guides/testing-with-kev.md) — recreate the pinned local server and verify authenticated Jev steps and offline resume
 - [Writing Workflows](guides/writing-workflows.md) — anatomy of a workflow, variables, register, conditions, custom types
 - [Fan-Out Patterns](guides/fan-out-patterns.md) — for_each concurrency, sub-workflow fan-outs, stable keys
 - [Resuming Workflows](guides/resuming-workflows.md) — checkpoint/resume workflow operations, caveats, and troubleshooting

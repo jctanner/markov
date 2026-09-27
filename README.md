@@ -23,6 +23,7 @@ A [Markov chain](https://en.wikipedia.org/wiki/Markov_chain) is a system that tr
 - **`assert`** — validate conditions and fail the workflow with a message if any are false
 - **Rule engine / gates** — define named rules with salience-based priority; gate steps evaluate rules via [Grule](https://github.com/hyperjumptech/grule-rule-engine), set facts, and can pause durably for explicit resume input
 - **Checkpoint/resume** — SQLite state store; resume failed runs from the last successful step
+- **Jev decisions** — native Jev/Kev API steps, durable inline conditions, and decision-backed gate facts; see [Jev reference](docs/reference/jev.md)
 - **K8s native** — creates `batch/v1` Jobs directly (no Argo dependency)
 
 ## Documentation

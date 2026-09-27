@@ -272,4 +272,8 @@ The `resolveContextPath` function (in `engine.go:1017`) resolves dot-separated p
 - Array index access is **not** supported in path resolution (use template syntax `{{ list.0 }}` instead, which is handled by pongo2).
 
 This function is used internally for `for_each` list resolution, `from` paths in lookup facts, and the `from_json` / `fromjson` direct resolution shortcut.
+
+## Jev support
+
+Jev step outputs are available through `register`. Decision-backed gate facts become ordinary numeric/string facts and persist in gate receipts. Credentials remain outside workflow context. See [Jev decisions](jev.md).
 {% endraw %}
