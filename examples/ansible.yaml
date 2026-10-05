@@ -1,0 +1,41 @@
+# Example: Ansible steps
+#
+# Requires ansible and ansible-playbook on the runner. The inventory is built
+# inline, so the example targets localhost only.
+
+entrypoint: ansible-demo
+
+workflows:
+  - name: ansible-demo
+    description: Ad-hoc ping, then a playbook run with an inline inventory.
+    steps:
+      - name: ping
+        type: ansible
+        params:
+          pattern: all
+          inventory: "localhost,"
+          connection: local
+          module: ping
+
+      - name: write-playbook
+        type: shell_exec
+        params:
+          command: |
+            cat > /tmp/markov-ansible-demo.yml <<'EOF'
+            - hosts: all
+              gather_facts: false
+              tasks:
+                - debug:
+                    msg: "hello from markov"
+            EOF
+
+      - name: run-playbook
+        type: ansible_playbook
+        register: play
+        params:
+          playbook: /tmp/markov-ansible-demo.yml
+          inventory:
+            all:
+              hosts:
+                localhost:
+                  ansible_connection: local

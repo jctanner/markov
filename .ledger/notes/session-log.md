@@ -65,3 +65,7 @@ Verified:
 ## 2026-09-27 — Jev integration
 
 Implemented named connections/decisions, native Jev steps, durable inline conditions/assertions, and decision-backed gate facts. Added optional directory definition files and documentation. Verified against authenticated CPU Kev-0.8B, including a successful resume after stopping the server. All tests/build/vet and 22 example validations pass; full formatting check has four unchanged baseline failures. See [validation](jev-kev-validation.md) and [completed task](../tasks/done/jev-support.md).
+
+## 2026-10-05 — Ansible step types
+
+Added `ansible_playbook` and `ansible` primitives with inline/path inventory, extra vars via temp files, CLI flag params, and parsed `PLAY RECAP`. See [task](../tasks/done/ansible-step-types.md). Tested with a fake binary; not yet run against real Ansible.

@@ -19,6 +19,8 @@ Every step has a `type` that determines what it does. Markov provides these prim
 |------|---------|
 | `shell_exec` | Run a shell command |
 | `script_exec` | Run an inline or repository script through an interpreter |
+| `ansible_playbook` | Run `ansible-playbook` |
+| `ansible` | Run an ad-hoc Ansible module |
 | `prompt` | Read local interactive terminal input |
 | `k8s_job` | Create and run a Kubernetes Job |
 | `http_request` | Make an HTTP request |

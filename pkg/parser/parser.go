@@ -328,18 +328,20 @@ func validateSteps(wf *WorkflowFile, workflowName, section string, steps []Step,
 }
 
 var primitives = map[string]bool{
-	"jev":           true,
-	"k8s_job":       true,
-	"k8s_job_wait":  true,
-	"http_request":  true,
-	"llm_invoke":    true,
-	"shell_exec":    true,
-	"script_exec":   true,
-	"prompt":        true,
-	"gate":          true,
-	"load_artifact": true,
-	"set_fact":      true,
-	"assert":        true,
+	"jev":              true,
+	"k8s_job":          true,
+	"k8s_job_wait":     true,
+	"http_request":     true,
+	"llm_invoke":       true,
+	"shell_exec":       true,
+	"script_exec":      true,
+	"ansible":          true,
+	"ansible_playbook": true,
+	"prompt":           true,
+	"gate":             true,
+	"load_artifact":    true,
+	"set_fact":         true,
+	"assert":           true,
 }
 
 func resolveType(wf *WorkflowFile, typeName string) error {

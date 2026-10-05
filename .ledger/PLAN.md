@@ -24,6 +24,7 @@
 - [Implement source integrity modes](tasks/done/source-integrity-modes.md)
 - [Add k8s_job_wait step type](tasks/done/k8s-job-wait-step-type.md)
 - [Add Postgres state store support](tasks/done/postgres-state-store.md)
+- [Add ansible and ansible_playbook step types](tasks/done/ansible-step-types.md)
 - [Define directory workflow schema](tasks/done/directory-workflow-schema.md)
 - [Implement directory loader and merge validation](tasks/done/directory-loader-merge-validation.md)
 - [Wire directory input into CLI commands](tasks/done/directory-cli-integration.md)

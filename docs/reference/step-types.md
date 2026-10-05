@@ -1,7 +1,7 @@
 {% raw %}
 # Built-in Step Types
 
-Markov ships with eleven primitive step types. Every step in a workflow must resolve to one of these primitives, either directly or through a [custom step type](custom-step-types.md).
+Markov ships with thirteen primitive step types. Every step in a workflow must resolve to one of these primitives, either directly or through a [custom step type](custom-step-types.md).
 
 All step types support these common fields:
 
@@ -136,6 +136,105 @@ my-workflow/
     interpreter: python3
     path: reconcile.py
     args: ["--dry-run"]
+```
+
+---
+
+## ansible_playbook
+
+Runs `ansible-playbook` on the Markov runner host. The binary is executed directly (no shell), so parameter values cannot inject shell syntax. `ansible-playbook` must be installed on the runner (or in the job image when run through a custom environment).
+
+### Parameters
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `playbook` | string or string[] | yes | Playbook path(s), relative to `chdir` if set. |
+| `chdir` | string | no | Directory to run in. Must exist. Defaults to the Markov process working directory. |
+| `inventory` | string, string[], or map | no | A path or inline host list (`"web01,web02,"`), a list of those (one `-i` each), or an inline inventory in Ansible YAML form (`all: {hosts: ..., children: ..., vars: ...}`), which is written to a temporary file removed after the run. |
+| `limit` | string or string[] | no | `--limit`; lists are comma-joined. |
+| `tags` / `skip_tags` | string or string[] | no | `--tags` / `--skip-tags`. |
+| `start_at_task` | string | no | `--start-at-task`. |
+| `extra_vars` | map or string | no | A map is written to a temporary 0600 JSON file and passed as `-e @file`, keeping values out of the process list. A string is passed as-is (`k=v`, JSON, or `@file`). |
+| `extra_vars_files` | string[] | no | Each passed as `-e @file`. |
+| `check` / `diff` / `become` | bool | no | `--check` / `--diff` / `--become`. |
+| `become_user`, `become_method`, `remote_user`, `connection`, `private_key`, `vault_password_file`, `vault_id` | string | no | Corresponding Ansible flags. |
+| `forks`, `timeout` | int | no | `--forks`, `--timeout` (SSH timeout; use the step-level `timeout` to bound the whole run). |
+| `verbosity` | int 0-6 | no | Becomes `-v` repeated. |
+| `env` | map[string]string | no | Extra environment variables (e.g. `ANSIBLE_HOST_KEY_CHECKING`). `ANSIBLE_NOCOLOR=1` is set by default. |
+| `extra_args` | string[] | no | Extra arguments appended verbatim, for flags not listed above. |
+| `binary` | string | no | Executable to run instead of `ansible-playbook`. |
+
+### Output Variables
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `stdout` | string | Standard output. |
+| `stderr` | string | Standard error. |
+| `exit_code` | int | Process exit code. |
+| `recap` | map | Parsed `PLAY RECAP`: `{host: {ok, changed, unreachable, failed, skipped, rescued, ignored}}`. |
+| `changed` | bool | True if any host reported `changed > 0`. |
+
+### Failure Conditions
+
+A non-zero exit code (including failed or unreachable hosts) fails the step. Output is still available to `rescue`/`always` handling.
+
+### Example
+
+```yaml
+- name: deploy
+  type: ansible_playbook
+  register: deploy
+  params:
+    chdir: ./infra
+    playbook: site.yml
+    inventory:
+      all:
+        hosts:
+          web01: {ansible_host: "{{ web_ip }}"}
+    tags: [deploy]
+    extra_vars:
+      version: "{{ version }}"
+    become: true
+  timeout: 900
+
+- name: notify
+  type: shell_exec
+  when: deploy.changed
+  params:
+    command: echo "changed hosts"
+```
+
+---
+
+## ansible
+
+Runs an ad-hoc `ansible` module against a host pattern. Shares the connection and privilege parameters of `ansible_playbook`.
+
+### Parameters
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `pattern` | string | yes | Host pattern, e.g. `all`, `web`, `web01:web02`. |
+| `module` | string | no | Module name (`-m`). Default `command`. |
+| `module_args` | string or map | no | `-a`. A map is JSON-encoded. |
+| `poll`, `background` | int | no | `-P`, `-B` for async execution. |
+
+Also accepted, with the same meaning as for [`ansible_playbook`](#ansible_playbook): `chdir`, `inventory`, `limit`, `extra_vars`, `extra_vars_files`, `check`, `diff`, `become`, `become_user`, `become_method`, `remote_user`, `connection`, `private_key`, `vault_password_file`, `vault_id`, `forks`, `timeout`, `verbosity`, `env`, `extra_args`, `binary`.
+
+### Output Variables
+
+`stdout`, `stderr`, `exit_code`, and `changed` (true if any host line reports `CHANGED`).
+
+### Example
+
+```yaml
+- name: ping
+  type: ansible
+  params:
+    pattern: all
+    inventory: "web01,web02,"
+    module: ping
+    connection: ssh
 ```
 
 ---

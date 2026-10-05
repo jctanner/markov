@@ -445,11 +445,13 @@ func resolveNamespace(wfNamespace, flagNS string) string {
 
 func buildExecutors(wf *parser.WorkflowFile) (map[string]executor.Executor, error) {
 	executors := map[string]executor.Executor{
-		"shell_exec":   executor.NewShellExec(),
-		"script_exec":  executor.NewScriptExec(),
-		"prompt":       executor.NewPrompt(),
-		"http_request": executor.NewHTTPRequest(),
-		"jev":          executor.NewJev(wf.Connections),
+		"shell_exec":       executor.NewShellExec(),
+		"script_exec":      executor.NewScriptExec(),
+		"ansible":          executor.NewAnsible(),
+		"ansible_playbook": executor.NewAnsiblePlaybook(),
+		"prompt":           executor.NewPrompt(),
+		"http_request":     executor.NewHTTPRequest(),
+		"jev":              executor.NewJev(wf.Connections),
 	}
 
 	namespace := resolveNamespace(wf.Namespace, flagNamespace)
