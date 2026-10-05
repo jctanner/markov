@@ -2,6 +2,10 @@
 
 A filesystem-native project management system designed for AI agents working on large projects.
 
+The ledger's top-level directory is `<PROJECTROOT>/.ledger/`. All ledger
+indexes, plans, tasks, bugs, decisions, and notes live beneath that directory;
+paths in this document are relative to `.ledger/` unless stated otherwise.
+
 ## Goals
 
 - Decompose large projects into durable work items.
@@ -62,37 +66,32 @@ Even if not fixed.
 # Recommended Layout
 
 ```text
-AGENTS.md
-PLAN.md
-
-docs/
-  plans/
-    000-overview.md
-    phase-01-foundation.md
-    phase-02-core-loop.md
-    phase-03-ui.md
-
-  milestones/
-    M1-bootstrap.md
-    M2-runner-api.md
-    M3-job-logs.md
-
-  tasks/
-    pending/
-    current/
-    blocked/
-    done/
-
-  bugs/
-    open/
-    fixed/
-    wontfix/
-
-  decisions/
-    ADR-0001-example.md
-
-  notes/
-    session-log.md
+<PROJECTROOT>/
+└── .ledger/
+    ├── AGENTS.md
+    ├── PLAN.md
+    ├── plans/
+    │   ├── 000-overview.md
+    │   ├── phase-01-foundation.md
+    │   ├── phase-02-core-loop.md
+    │   └── phase-03-ui.md
+    ├── milestones/
+    │   ├── M1-bootstrap.md
+    │   ├── M2-runner-api.md
+    │   └── M3-job-logs.md
+    ├── tasks/
+    │   ├── pending/
+    │   ├── current/
+    │   ├── blocked/
+    │   └── done/
+    ├── bugs/
+    │   ├── open/
+    │   ├── fixed/
+    │   └── wontfix/
+    ├── decisions/
+    │   └── ADR-0001-example.md
+    └── notes/
+        └── session-log.md
 ```
 
 ---
@@ -126,16 +125,16 @@ Example:
 
 ## Active Tasks
 
-- docs/tasks/current/job-create-api.md
-- docs/tasks/current/job-log-storage.md
+- tasks/current/job-create-api.md
+- tasks/current/job-log-storage.md
 
 ## Open Bugs
 
-- docs/bugs/open/stdout-timeout.md
+- bugs/open/stdout-timeout.md
 
 ## Decisions
 
-- docs/decisions/ADR-0003-use-postgres.md
+- decisions/ADR-0003-use-postgres.md
 ```
 
 ---

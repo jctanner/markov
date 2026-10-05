@@ -75,9 +75,9 @@ Keep examples consistent with the documented DSL.
 
 ## Agent Work Ledger
 
-`docs/agentic_work_ledger.md` describes the preferred long-running project-management pattern:
+`.ledger/agentic_work_ledger.md` describes the preferred long-running project-management pattern:
 
-- `PLAN.md` is an index, not the full plan.
+- `.ledger/PLAN.md` is an index, not the full plan.
 - Meaningful tasks are individual files.
 - Status is represented by directory placement, such as `pending/`, `current/`, `blocked/`, and `done/`.
 - Bugs and ADRs should be first-class markdown artifacts.

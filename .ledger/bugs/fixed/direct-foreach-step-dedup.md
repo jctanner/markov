@@ -52,4 +52,4 @@ Direct typed `for_each` is unreliable for multi-item execution and resume. Sub-w
 
 ## Related Tasks
 
-- `docs/tasks/pending/directory-docs-and-examples.md`
+- `.ledger/tasks/pending/directory-docs-and-examples.md`

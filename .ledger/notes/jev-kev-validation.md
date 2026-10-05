@@ -2,7 +2,7 @@
 
 Date: 2026-09-27. Workflow: [examples/jev.yaml](../../examples/jev.yaml). Raw responses and server metadata: [jev-kev-validation.json](jev-kev-validation.json).
 
-Reproduction: [CPU Kev setup and test guide](../guides/testing-with-kev.md) includes installation, pinned dependencies, credentials, server startup, and offline-resume commands.
+Reproduction: [CPU Kev setup and test guide](../../docs/guides/testing-with-kev.md) includes installation, pinned dependencies, credentials, server startup, and offline-resume commands.
 
 ## Stack
 

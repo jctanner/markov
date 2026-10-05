@@ -22,7 +22,7 @@ The feature should support splitting one workflow file into a predictable direct
 - `pkg/parser/types.go`
 - `pkg/parser/parser.go`
 - `docs/reference/workflow-file.md`
-- `docs/decisions/ADR-0001-directory-workflow-layout.md`
+- `.ledger/decisions/ADR-0001-directory-workflow-layout.md`
 
 ## Status
 
