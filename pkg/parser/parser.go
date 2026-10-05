@@ -335,6 +335,7 @@ var primitives = map[string]bool{
 	"llm_invoke":       true,
 	"shell_exec":       true,
 	"script_exec":      true,
+	"claude":           true,
 	"ansible":          true,
 	"ansible_playbook": true,
 	"prompt":           true,

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -58,6 +59,9 @@ func (m *mockCallback) OnStepFailed(e callback.StepFailedEvent) error {
 }
 func (m *mockCallback) OnStepSkipped(e callback.StepSkippedEvent) error {
 	return m.record("step_skipped", e)
+}
+func (m *mockCallback) OnStepProgress(e callback.StepProgressEvent) error {
+	return m.record("step_progress", e)
 }
 func (m *mockCallback) OnJobCreated(e callback.JobCreatedEvent) error {
 	return m.record("job_created", e)
@@ -450,7 +454,10 @@ func (e *errorCallback) OnStepCompleted(callback.StepCompletedEvent) error {
 }
 func (e *errorCallback) OnStepFailed(callback.StepFailedEvent) error   { return fmt.Errorf("cb error") }
 func (e *errorCallback) OnStepSkipped(callback.StepSkippedEvent) error { return fmt.Errorf("cb error") }
-func (e *errorCallback) OnJobCreated(callback.JobCreatedEvent) error   { return fmt.Errorf("cb error") }
+func (e *errorCallback) OnStepProgress(callback.StepProgressEvent) error {
+	return fmt.Errorf("cb error")
+}
+func (e *errorCallback) OnJobCreated(callback.JobCreatedEvent) error { return fmt.Errorf("cb error") }
 func (e *errorCallback) OnGateEvaluated(callback.GateEvaluatedEvent) error {
 	return fmt.Errorf("cb error")
 }
@@ -812,5 +819,47 @@ func TestCallbackJobCreated(t *testing.T) {
 			}
 			break
 		}
+	}
+}
+
+func TestCallbackStepProgress(t *testing.T) {
+	// A real executor cannot be reached through the context key above, so this
+	// test drives the production path with the claude executor and a fake binary.
+	script := filepath.Join(t.TempDir(), "fake-claude")
+	body := "#!/bin/sh\ncat >/dev/null\n" +
+		`echo '{"type":"system","subtype":"init","session_id":"s","model":"m"}'` + "\n" +
+		`echo '{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"output_tokens":1}}}'` + "\n" +
+		`echo '{"type":"result","is_error":false,"result":"hi","num_turns":1,"session_id":"s"}'` + "\n"
+	if err := os.WriteFile(script, []byte(body), 0700); err != nil {
+		t.Fatal(err)
+	}
+	wfFile := &parser.WorkflowFile{
+		Entrypoint: "main",
+		Workflows: []parser.Workflow{{
+			Name: "main",
+			Steps: []parser.Step{{
+				Name: "ask", Type: "claude", Register: "ask",
+				Params: map[string]any{"binary": script, "prompt": "say hi"},
+			}},
+		}},
+	}
+	eng, cb := newTestEngine(t, wfFile, map[string]executor.Executor{"claude": executor.NewClaude()})
+	if _, err := eng.Run(context.Background(), "main", nil); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var kinds []string
+	cb.mu.Lock()
+	for _, e := range cb.all {
+		if p, ok := e.(callback.StepProgressEvent); ok {
+			if p.StepName != "ask" || p.StepType != "claude" || p.EventType != "step_progress" {
+				t.Errorf("unexpected progress header: %+v", p)
+			}
+			kinds = append(kinds, p.Kind)
+		}
+	}
+	cb.mu.Unlock()
+	if got := fmt.Sprint(kinds); got != "[init text usage result]" {
+		t.Errorf("progress kinds = %s", got)
 	}
 }

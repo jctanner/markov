@@ -104,6 +104,9 @@ All events share a common header:
 | `step_completed` | Step succeeds | `workflow_name`, `step_name`, `step_type`, `output`, `duration_seconds` |
 | `step_failed` | Step fails | `workflow_name`, `step_name`, `step_type`, `error`, `duration_seconds` |
 | `step_skipped` | Step skipped (when: false) | `workflow_name`, `step_name`, `reason` |
+| `step_progress` | Live progress from inside a running step (currently emitted by `claude`) | `workflow_name`, `step_name`, `step_type`, `kind`, `data` |
+
+`step_progress` events are informational: they are delivered to callbacks only and are not stored in the state store. For `claude` steps, `kind` is one of `init`, `text`, `tool_use`, `tool_result`, `usage` (running `turns` and `tokens` totals), `limit_exceeded`, or `result`. See [claude](step-types.md#claude).
 
 ### Kubernetes events
 

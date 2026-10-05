@@ -69,3 +69,7 @@ Implemented named connections/decisions, native Jev steps, durable inline condit
 ## 2026-10-05 — Ansible step types
 
 Added `ansible_playbook` and `ansible` primitives with inline/path inventory, extra vars via temp files, CLI flag params, and parsed `PLAY RECAP`. See [task](../tasks/done/ansible-step-types.md). Tested with a fake binary; not yet run against real Ansible.
+
+## 2026-10-05 — claude step type
+
+Added the `claude` primitive with live stream-json processing, Markov-enforced limits, and a new `step_progress` callback event. Verified against the real CLI with the OAuth login (no API key). See [task](../tasks/done/claude-step-type.md) and [ADR-0004](../decisions/ADR-0004-claude-step-type.md).

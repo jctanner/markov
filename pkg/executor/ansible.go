@@ -27,7 +27,7 @@ func NewAnsible() *Ansible { return &Ansible{} }
 
 func (e *AnsiblePlaybook) Execute(ctx context.Context, params map[string]any) (*Result, error) {
 	const name = "ansible_playbook"
-	playbooks, err := ansibleStringList(name, params, "playbook")
+	playbooks, err := stringListParam(name, params, "playbook")
 	if err != nil {
 		return nil, err
 	}
@@ -84,14 +84,14 @@ func (e *Ansible) Execute(ctx context.Context, params map[string]any) (*Result, 
 		}
 	}
 	if raw, ok := params["poll"]; ok {
-		n, err := ansibleInt(name, "poll", raw)
+		n, err := intParam(name, "poll", raw)
 		if err != nil {
 			return nil, err
 		}
 		b.args = append(b.args, "-P", strconv.Itoa(n))
 	}
 	if raw, ok := params["background"]; ok {
-		n, err := ansibleInt(name, "background", raw)
+		n, err := intParam(name, "background", raw)
 		if err != nil {
 			return nil, err
 		}
@@ -154,7 +154,7 @@ func (b *ansibleBuilder) common(params map[string]any) error {
 			return err
 		}
 	}
-	files, err := ansibleStringList(b.name, params, "extra_vars_files")
+	files, err := stringListParam(b.name, params, "extra_vars_files")
 	if err != nil {
 		return err
 	}
@@ -162,7 +162,7 @@ func (b *ansibleBuilder) common(params map[string]any) error {
 		b.args = append(b.args, "-e", "@"+f)
 	}
 
-	limit, err := ansibleStringList(b.name, params, "limit")
+	limit, err := stringListParam(b.name, params, "limit")
 	if err != nil {
 		return err
 	}
@@ -207,7 +207,7 @@ func (b *ansibleBuilder) common(params map[string]any) error {
 		{"timeout", "--timeout"},
 	} {
 		if raw, ok := params[f.key]; ok {
-			n, err := ansibleInt(b.name, f.key, raw)
+			n, err := intParam(b.name, f.key, raw)
 			if err != nil {
 				return err
 			}
@@ -215,7 +215,7 @@ func (b *ansibleBuilder) common(params map[string]any) error {
 		}
 	}
 	if raw, ok := params["verbosity"]; ok {
-		n, err := ansibleInt(b.name, "verbosity", raw)
+		n, err := intParam(b.name, "verbosity", raw)
 		if err != nil {
 			return err
 		}
@@ -227,7 +227,7 @@ func (b *ansibleBuilder) common(params map[string]any) error {
 		}
 	}
 
-	extra, err := ansibleStringList(b.name, params, "extra_args")
+	extra, err := stringListParam(b.name, params, "extra_args")
 	if err != nil {
 		return err
 	}
@@ -256,7 +256,7 @@ func (b *ansibleBuilder) playbookFlags(params map[string]any) error {
 		{"tags", "--tags"},
 		{"skip_tags", "--skip-tags"},
 	} {
-		vals, err := ansibleStringList(b.name, params, f.key)
+		vals, err := stringListParam(b.name, params, f.key)
 		if err != nil {
 			return err
 		}
@@ -441,7 +441,7 @@ func atoi(s string) int {
 	return n
 }
 
-func ansibleInt(name, key string, raw any) (int, error) {
+func intParam(name, key string, raw any) (int, error) {
 	switch v := raw.(type) {
 	case int:
 		return v, nil
@@ -461,7 +461,7 @@ func ansibleInt(name, key string, raw any) (int, error) {
 
 // ansibleStringList reads a param that may be a single string or a list of
 // strings. Missing returns nil.
-func ansibleStringList(name string, params map[string]any, key string) ([]string, error) {
+func stringListParam(name string, params map[string]any, key string) ([]string, error) {
 	raw, exists := params[key]
 	if !exists {
 		return nil, nil

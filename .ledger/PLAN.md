@@ -24,6 +24,7 @@
 - [Implement source integrity modes](tasks/done/source-integrity-modes.md)
 - [Add k8s_job_wait step type](tasks/done/k8s-job-wait-step-type.md)
 - [Add Postgres state store support](tasks/done/postgres-state-store.md)
+- [Add claude step type](tasks/done/claude-step-type.md)
 - [Add ansible and ansible_playbook step types](tasks/done/ansible-step-types.md)
 - [Define directory workflow schema](tasks/done/directory-workflow-schema.md)
 - [Implement directory loader and merge validation](tasks/done/directory-loader-merge-validation.md)
@@ -45,3 +46,4 @@
 - [ADR-0002: Source Integrity Modes for Resumable Workflow Runs](decisions/ADR-0002-source-integrity-modes.md)
 
 - [ADR-0003: Durable Jev decisions](decisions/ADR-0003-durable-jev-decisions.md)
+- [ADR-0004: Native claude step with Markov-enforced limits](decisions/ADR-0004-claude-step-type.md)

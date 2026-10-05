@@ -372,6 +372,7 @@ These are the built-in step types available in every workflow file.
 | `http_request` | Make an HTTP request. |
 | `shell_exec` | Execute a shell command on the local machine. |
 | `script_exec` | Run an inline script or a script from the workflow `scripts/` directory on the local machine. |
+| `claude` | Run the Claude Code CLI with a prompt or skill, streaming its output with enforced turn, token, and duration limits. |
 | `ansible_playbook` | Run `ansible-playbook` with an inventory, extra vars, and CLI options. |
 | `ansible` | Run an ad-hoc `ansible` module against a host pattern. |
 | `prompt` | Read a response from an interactive terminal on the local machine. |

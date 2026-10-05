@@ -447,6 +447,7 @@ func buildExecutors(wf *parser.WorkflowFile) (map[string]executor.Executor, erro
 	executors := map[string]executor.Executor{
 		"shell_exec":       executor.NewShellExec(),
 		"script_exec":      executor.NewScriptExec(),
+		"claude":           executor.NewClaude(),
 		"ansible":          executor.NewAnsible(),
 		"ansible_playbook": executor.NewAnsiblePlaybook(),
 		"prompt":           executor.NewPrompt(),

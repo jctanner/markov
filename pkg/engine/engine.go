@@ -902,6 +902,19 @@ func (e *Engine) executeStepWithOptions(ctx context.Context, runID string, workf
 		defer k8sExec.SetOnJobCreated(nil)
 	}
 
+	execCtx = executor.WithProgress(execCtx, func(kind string, data map[string]any) {
+		e.fireEvent(func(cb callback.Callback) error {
+			return cb.OnStepProgress(callback.StepProgressEvent{
+				EventHeader:  callback.EventHeader{Timestamp: time.Now(), RunID: runID, EventType: "step_progress"},
+				WorkflowName: workflowName,
+				StepName:     step.Name,
+				StepType:     step.Type,
+				Kind:         kind,
+				Data:         data,
+			})
+		})
+	})
+
 	result, err := exec.Execute(execCtx, renderedParams)
 	if err != nil {
 		return e.failStep(ctx, runID, workflowName, stateStepName, base, now, err)

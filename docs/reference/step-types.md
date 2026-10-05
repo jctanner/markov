@@ -1,7 +1,7 @@
 {% raw %}
 # Built-in Step Types
 
-Markov ships with thirteen primitive step types. Every step in a workflow must resolve to one of these primitives, either directly or through a [custom step type](custom-step-types.md).
+Markov ships with fourteen primitive step types. Every step in a workflow must resolve to one of these primitives, either directly or through a [custom step type](custom-step-types.md).
 
 All step types support these common fields:
 
@@ -136,6 +136,105 @@ my-workflow/
     interpreter: python3
     path: reconcile.py
     args: ["--dry-run"]
+```
+
+---
+
+## claude
+
+Runs the Claude Code CLI non-interactively (`claude -p`) with `--output-format stream-json --verbose` and processes its event stream live. Use it to run a prompt or a skill (a slash command) in an execution directory, with limits that Markov enforces while the run is in progress.
+
+The step runs on the Markov runner host and needs the `claude` CLI installed there.
+
+**Authentication.** The step never requires or sets `ANTHROPIC_API_KEY`. It starts `claude` with the runner's environment, so an existing OAuth login under `HOME` (`~/.claude`) is used. To use a key or token instead, pass it through `env`. In Kubernetes there is no interactive login in the pod; provide credentials through `env` or by mounting them.
+
+The prompt is written to the process's stdin, so it does not appear in the process list.
+
+### Parameters
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `prompt` | string | one of `prompt`/`skill` | The prompt text. May itself be a slash command such as `/review-pr 123`. |
+| `skill` | string | one of `prompt`/`skill` | Skill or command name; the prompt becomes `/<skill> <args>`. |
+| `args` | string | no | Arguments appended after `skill`. |
+| `chdir` | string | no | Directory to run in. Must exist. Defaults to the Markov process working directory. |
+| `model` | string | no | `--model`. |
+| `effort` | string | no | `--effort`. |
+| `fallback_model` | string | no | `--fallback-model`. |
+| `permission_mode` | string | no | `acceptEdits`, `auto`, `bypassPermissions` (alias `bypass`), `manual`, `dontAsk`, or `plan`. Unset uses the CLI default, which in non-interactive mode denies anything that would prompt. **`bypassPermissions` lets the run use every tool without asking; only enable it where that is acceptable.** |
+| `allowed_tools` / `disallowed_tools` | string[] | no | `--allowedTools` / `--disallowedTools`. Prefer these over bypass. |
+| `append_system_prompt` | string | no | `--append-system-prompt`. |
+| `add_dirs` | string[] | no | Extra directories the run may access (`--add-dir`). |
+| `mcp_config` | string or string[] | no | `--mcp-config` file(s) or JSON. |
+| `settings` | string | no | `--settings` file or JSON. |
+| `resume` / `session_id` | string | no | `--resume` / `--session-id`. |
+| `bare` | bool | no | `--bare`: skip hooks, plugins, and CLAUDE.md discovery. Bare mode requires API-key authentication, so it will not use an OAuth login. |
+| `limits` | map | no | Limits enforced by Markov; see below. |
+| `events_limit` | int | no | Maximum events kept in the `events` output. Default 200; `0` keeps none. Live callbacks are not capped. |
+| `env` | map[string]string | no | Extra environment variables. |
+| `extra_args` | string[] | no | Extra arguments appended verbatim. |
+| `binary` | string | no | Executable to run instead of `claude`. |
+
+### Limits
+
+| Limit | Meaning |
+|-------|---------|
+| `max_turns` | Maximum assistant turns (top-level assistant messages). |
+| `max_tokens` | Maximum new tokens: input + output + cache-creation. Cache reads are excluded because every turn re-reads the cached context. |
+| `max_duration` | Maximum wall-clock seconds for the run. |
+| `max_budget_usd` | Passed to `--max-budget-usd`. On a subscription this is a notional figure rather than a charge. |
+
+Markov counts turns and tokens from the stream as events arrive. When a limit is exceeded it stops the process (and any tools it started), emits a `limit_exceeded` progress event, and fails the step with `claude: limit exceeded: <limit>`. The step output is still returned, with `limit_exceeded` set. Use the step-level `timeout` as an additional bound.
+
+### Output Variables
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `result` | string | Final result text. |
+| `is_error` | bool | True if the run reported an error or a limit was exceeded. |
+| `session_id` | string | Claude session ID. |
+| `model` | string | Model reported by the session. |
+| `num_turns` | int | Turns taken. |
+| `tokens` | int | New tokens counted against `max_tokens`. |
+| `usage` | map | `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`. |
+| `total_cost_usd` | float | Cost reported by the CLI. |
+| `limit_exceeded` | string | Name of the exceeded limit, or empty. |
+| `stop_reason`, `terminal_reason`, `duration_ms`, `permission_denials` | | Passed through from the CLI result when present. |
+| `events` | list | Compact events (`kind` plus fields), capped by `events_limit`. Long strings are truncated. |
+| `events_truncated` | bool | True if events were dropped by the cap. |
+| `exit_code`, `stderr` | | Process exit code and standard error. |
+
+### Live progress
+
+Each stream event is also sent to configured callbacks as a [`step_progress`](callbacks.md#step-lifecycle-events) event while the step runs.
+
+### Failure Conditions
+
+The step fails if a limit is exceeded, the CLI reports `is_error`, no result event is produced, or the process exits non-zero. Permission denials in bypass-free modes do not fail the step by themselves; inspect `permission_denials`.
+
+On resume, a completed `claude` step is skipped like any other step; an interrupted one starts over rather than resuming its session. Concurrent `for_each` iterations share one login and its rate limits, so use a low `concurrency`.
+
+### Example
+
+```yaml
+- name: review
+  type: claude
+  register: review
+  params:
+    skill: review-pr
+    args: "{{ pr }}"
+    chdir: ./repo
+    allowed_tools: [Read, Grep, Bash]
+    limits:
+      max_turns: 30
+      max_tokens: 500000
+      max_duration: 900
+
+- name: report
+  type: shell_exec
+  when: "not review.is_error"
+  params:
+    command: echo "{{ review.result }}"
 ```
 
 ---

@@ -98,6 +98,18 @@ type JobCreatedEvent struct {
 	PodSelector  string `json:"pod_selector"`
 }
 
+// StepProgressEvent reports live progress from inside a running step, such as
+// the assistant messages and tool calls of a claude step. Progress events are
+// informational and are not persisted in the state store.
+type StepProgressEvent struct {
+	EventHeader
+	WorkflowName string         `json:"workflow_name"`
+	StepName     string         `json:"step_name"`
+	StepType     string         `json:"step_type"`
+	Kind         string         `json:"kind"`
+	Data         map[string]any `json:"data,omitempty"`
+}
+
 type GateEvaluatedEvent struct {
 	EventHeader
 	WorkflowName string         `json:"workflow_name"`
@@ -145,6 +157,8 @@ type Callback interface {
 	OnStepCompleted(event StepCompletedEvent) error
 	OnStepFailed(event StepFailedEvent) error
 	OnStepSkipped(event StepSkippedEvent) error
+
+	OnStepProgress(event StepProgressEvent) error
 
 	OnJobCreated(event JobCreatedEvent) error
 	OnGateEvaluated(event GateEvaluatedEvent) error

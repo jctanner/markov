@@ -1,0 +1,31 @@
+# Example: claude step
+#
+# Requires the claude CLI on the runner, logged in (OAuth) or with credentials
+# provided through env. Run with a callback to watch progress live:
+#   markov run examples/claude.yaml --callback jsonl:///tmp/claude-progress.jsonl
+
+entrypoint: claude-demo
+
+vars:
+  topic: directory workflows
+
+workflows:
+  - name: claude-demo
+    description: Ask Claude a question with enforced limits, then print the answer.
+    steps:
+      - name: summarize
+        type: claude
+        register: summary
+        params:
+          prompt: "In two sentences, explain {{ topic }} in this repository. Read files if needed."
+          allowed_tools: [Read, Grep, Glob]
+          limits:
+            max_turns: 10
+            max_tokens: 200000
+            max_duration: 300
+
+      - name: show
+        type: shell_exec
+        params:
+          command: |
+            echo "turns={{ summary.num_turns }} tokens={{ summary.tokens }}"

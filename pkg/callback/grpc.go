@@ -111,6 +111,9 @@ func (g *GRPCCallback) OnStepFailed(event StepFailedEvent) error {
 func (g *GRPCCallback) OnStepSkipped(event StepSkippedEvent) error {
 	return g.sendEvent(event.EventType, event.RunID, event.Timestamp, event)
 }
+func (g *GRPCCallback) OnStepProgress(event StepProgressEvent) error {
+	return g.sendEvent(event.EventType, event.RunID, event.Timestamp, event)
+}
 func (g *GRPCCallback) OnJobCreated(event JobCreatedEvent) error {
 	return g.sendEvent(event.EventType, event.RunID, event.Timestamp, event)
 }
