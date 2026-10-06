@@ -68,6 +68,7 @@ func migratePostgres(db *sql.DB) error {
 		);
 
 		ALTER TABLE runs ADD COLUMN IF NOT EXISTS source_digest TEXT;
+		ALTER TABLE steps ADD COLUMN IF NOT EXISTS definition_hash TEXT;
 	`)
 	if err != nil {
 		return fmt.Errorf("migrating postgres schema: %w", err)
@@ -235,18 +236,19 @@ func (s *PostgresStore) GetSourceChecks(ctx context.Context, runID string) ([]*S
 
 func (s *PostgresStore) SaveStep(ctx context.Context, step *StepResult) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO steps (run_id, workflow_name, step_name, status, output_json, artifacts_json, error, started_at, completed_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO steps (run_id, workflow_name, step_name, status, output_json, artifacts_json, error, started_at, completed_at, definition_hash)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (run_id, workflow_name, step_name) DO UPDATE SET
 			status = excluded.status,
 			output_json = excluded.output_json,
 			artifacts_json = excluded.artifacts_json,
 			error = excluded.error,
 			started_at = excluded.started_at,
-			completed_at = excluded.completed_at`,
+			completed_at = excluded.completed_at,
+			definition_hash = excluded.definition_hash`,
 		step.RunID, step.WorkflowName, step.StepName, step.Status,
 		nullStr(step.OutputJSON), nullStr(step.ArtifactsJSON), nullStr(step.Error),
-		step.StartedAt, step.CompletedAt)
+		step.StartedAt, step.CompletedAt, nullStr(step.DefinitionHash))
 	if err != nil {
 		return fmt.Errorf("saving step: %w", err)
 	}
@@ -255,7 +257,7 @@ func (s *PostgresStore) SaveStep(ctx context.Context, step *StepResult) error {
 
 func (s *PostgresStore) GetSteps(ctx context.Context, runID string) ([]*StepResult, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT run_id, workflow_name, step_name, status, output_json, artifacts_json, error, started_at, completed_at
+		SELECT run_id, workflow_name, step_name, status, output_json, artifacts_json, error, started_at, completed_at, definition_hash
 		FROM steps WHERE run_id = $1 ORDER BY started_at`, runID)
 	if err != nil {
 		return nil, fmt.Errorf("getting steps: %w", err)
@@ -265,15 +267,16 @@ func (s *PostgresStore) GetSteps(ctx context.Context, runID string) ([]*StepResu
 	var steps []*StepResult
 	for rows.Next() {
 		var s StepResult
-		var outputJSON, artifactsJSON, stepErr sql.NullString
+		var outputJSON, artifactsJSON, stepErr, defHash sql.NullString
 		var startedAt, completedAt sql.NullTime
 		if err := rows.Scan(&s.RunID, &s.WorkflowName, &s.StepName, &s.Status,
-			&outputJSON, &artifactsJSON, &stepErr, &startedAt, &completedAt); err != nil {
+			&outputJSON, &artifactsJSON, &stepErr, &startedAt, &completedAt, &defHash); err != nil {
 			return nil, fmt.Errorf("scanning step: %w", err)
 		}
 		s.OutputJSON = outputJSON.String
 		s.ArtifactsJSON = artifactsJSON.String
 		s.Error = stepErr.String
+		s.DefinitionHash = defHash.String
 		if startedAt.Valid {
 			s.StartedAt = &startedAt.Time
 		}
@@ -290,15 +293,15 @@ func (s *PostgresStore) GetSteps(ctx context.Context, runID string) ([]*StepResu
 
 func (s *PostgresStore) GetStep(ctx context.Context, runID, workflowName, stepName string) (*StepResult, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT run_id, workflow_name, step_name, status, output_json, artifacts_json, error, started_at, completed_at
+		SELECT run_id, workflow_name, step_name, status, output_json, artifacts_json, error, started_at, completed_at, definition_hash
 		FROM steps WHERE run_id = $1 AND workflow_name = $2 AND step_name = $3`,
 		runID, workflowName, stepName)
 
 	var sr StepResult
-	var outputJSON, artifactsJSON, stepErr sql.NullString
+	var outputJSON, artifactsJSON, stepErr, defHash sql.NullString
 	var startedAt, completedAt sql.NullTime
 	err := row.Scan(&sr.RunID, &sr.WorkflowName, &sr.StepName, &sr.Status,
-		&outputJSON, &artifactsJSON, &stepErr, &startedAt, &completedAt)
+		&outputJSON, &artifactsJSON, &stepErr, &startedAt, &completedAt, &defHash)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -308,6 +311,7 @@ func (s *PostgresStore) GetStep(ctx context.Context, runID, workflowName, stepNa
 	sr.OutputJSON = outputJSON.String
 	sr.ArtifactsJSON = artifactsJSON.String
 	sr.Error = stepErr.String
+	sr.DefinitionHash = defHash.String
 	if startedAt.Valid {
 		sr.StartedAt = &startedAt.Time
 	}
@@ -315,4 +319,14 @@ func (s *PostgresStore) GetStep(ctx context.Context, runID, workflowName, stepNa
 		sr.CompletedAt = &completedAt.Time
 	}
 	return &sr, nil
+}
+
+// DeleteSteps removes the named step rows of a run.
+func (s *PostgresStore) DeleteSteps(ctx context.Context, runID string, stepNames []string) error {
+	for _, name := range stepNames {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM steps WHERE run_id = $1 AND step_name = $2`, runID, name); err != nil {
+			return fmt.Errorf("deleting step %q: %w", name, err)
+		}
+	}
+	return nil
 }

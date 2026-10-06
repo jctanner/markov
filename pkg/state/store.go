@@ -62,6 +62,9 @@ type StepResult struct {
 	Error         string
 	StartedAt     *time.Time
 	CompletedAt   *time.Time
+	// DefinitionHash fingerprints the step's definition when it was saved, so a later resume
+	// can tell that a completed step was edited. Empty for rows saved before it existed.
+	DefinitionHash string
 }
 
 type Store interface {
@@ -79,6 +82,8 @@ type Store interface {
 	SaveStep(ctx context.Context, step *StepResult) error
 	GetSteps(ctx context.Context, runID string) ([]*StepResult, error)
 	GetStep(ctx context.Context, runID, workflowName, stepName string) (*StepResult, error)
+	// DeleteSteps removes the named step rows of one run (rewinding it).
+	DeleteSteps(ctx context.Context, runID string, stepNames []string) error
 }
 
 func OpenStore(stateStore string) (Store, error) {

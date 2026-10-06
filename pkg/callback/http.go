@@ -121,6 +121,7 @@ func (h *HTTPCallback) OnStepCompleted(event StepCompletedEvent) error     { ret
 func (h *HTTPCallback) OnStepFailed(event StepFailedEvent) error           { return h.send(event) }
 func (h *HTTPCallback) OnStepSkipped(event StepSkippedEvent) error         { return h.send(event) }
 func (h *HTTPCallback) OnStepProgress(event StepProgressEvent) error       { return h.send(event) }
+func (h *HTTPCallback) OnDebug(event DebugEvent) error                     { return h.send(event) }
 func (h *HTTPCallback) OnJobCreated(event JobCreatedEvent) error           { return h.send(event) }
 func (h *HTTPCallback) OnGateEvaluated(event GateEvaluatedEvent) error     { return h.send(event) }
 func (h *HTTPCallback) OnSubRunStarted(event SubRunStartedEvent) error     { return h.send(event) }

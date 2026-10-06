@@ -42,6 +42,11 @@ markov run <file.yaml|directory> [flags]
 | `--callback-tls-insecure` | bool | `false` | Skip TLS certificate verification for callback connections. |
 | `--callback-tls-cert path` | string | -- | Path to a client TLS certificate for callback connections. |
 | `--callback-buffer-size N` | int | `1000` | Async send buffer size for callback dispatching. |
+| `--control stdin` | string | -- | Read [debugger commands](debugging.md) as JSON lines from standard input. Required for breakpoints and `--step`. |
+| `--breakpoint json` | string (repeatable) | -- | Breakpoint object, e.g. `{"workflow":"main","step":"build"}`. Resolved against the workflow before the run starts. |
+| `--breakpoints-file path` | string | -- | JSON file with an array of breakpoint objects. |
+| `--break workflow.step` | string (repeatable) | -- | Breakpoint shorthand, resolved against the real workflow and step names. |
+| `--step` | bool | `false` | Pause before every step. |
 
 **Examples:**
 
@@ -100,6 +105,10 @@ markov resume <run_id> [flags]
 | `--state-store path-or-dsn` | string | `MARKOV_STATE_STORE`, `/tmp/markov-state.db`, or `./markov-state.db` | SQLite path or Postgres DSN. |
 | `--var key=value` | string (repeatable) | -- | Override a variable before resuming. Required for paused runs. Values are parsed with the same coercion as `markov run --var`. |
 | `--source-integrity mode` | `warn`, `strict`, or `off` | `warn` | How to handle a workflow source-tree digest mismatch. `warn` resumes and records drift; `strict` rejects the resume; `off` skips the comparison. |
+| `--rewind json` | string (repeatable) | -- | Re-run from a step of the entrypoint workflow, e.g. `{"workflow":"main","step":"build"}`. That step and every later one run again; the earliest target wins. A completed run can be rewound. See [Edited steps and rewinding](state-store.md#edited-steps-and-rewinding). |
+| `--rewind-changed` | bool | `false` | Re-run from the earliest completed step whose definition changed since it ran. |
+| `--callback`, `--callback-header`, `--callback-tls-insecure`, `--callback-tls-cert`, `--callback-buffer-size` | | | The same event callbacks as `markov run`; the resumed run emits `run_resumed` first. |
+| `--control`, `--breakpoint`, `--breakpoints-file`, `--break`, `--step` | | | The same [debugger](debugging.md) flags as `markov run`, so a resumed run can be stepped through. |
 
 **Examples:**
 
@@ -115,7 +124,31 @@ markov resume abc123 --state-store /data/markov.db
 
 # Require the original workflow directory and scripts to be unchanged
 markov resume abc123 --source-integrity strict
+
+# Re-run from the first step you edited since the run
+markov resume abc123 --rewind-changed
+
+# Re-run from a specific step
+markov resume abc123 --rewind '{"workflow":"main","step":"deploy"}'
 ```
+
+---
+
+### markov schema
+
+Print the workflow format as JSON: the fields of the file, workflow and step, and every built-in step type with its parameters (and, for types such as `set_fact` and `gate` whose inputs are step-level fields, which fields). Editors and agents use it instead of keeping their own lists.
+
+```
+markov schema
+```
+
+```json
+{ "version": 1, "file": [{"name": "entrypoint", "type": "string"}, ...],
+  "step_types": [{"name": "shell_exec", "inputs": "params", "params": [{"name": "command", "required": true}], ...},
+                 {"name": "set_fact", "inputs": "step", "step_fields": ["vars"], ...}] }
+```
+
+The parameter table is checked against [Step Types](step-types.md) by a test; custom `step_types` defined in a workflow are not included.
 
 ---
 

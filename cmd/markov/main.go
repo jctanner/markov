@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -11,6 +13,7 @@ import (
 	"github.com/jctanner/markov/pkg/engine"
 	"github.com/jctanner/markov/pkg/executor"
 	"github.com/jctanner/markov/pkg/parser"
+	"github.com/jctanner/markov/pkg/schema"
 	"github.com/jctanner/markov/pkg/state"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/kubernetes"
@@ -35,6 +38,15 @@ var (
 	flagDebug               bool
 	flagRunID               string
 	flagSourceIntegrity     string
+
+	flagBreakpoints     []string
+	flagBreakpointsFile string
+	flagBreakShorthand  []string
+	flagStep            bool
+	flagControl         string
+
+	flagRewind        []string
+	flagRewindChanged bool
 
 	saTokenPath     = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 	saNamespacePath = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
@@ -64,6 +76,24 @@ func addStateStoreFlag(cmd *cobra.Command, defaultValue string) {
 	}
 }
 
+// addCallbackFlags registers the event-callback flags (run and resume both report events).
+func addCallbackFlags(cmd *cobra.Command) {
+	cmd.Flags().StringArrayVar(&flagCallbacks, "callback", nil, "Callback destination URL (repeatable). Schemes: jsonl://, http://, https://, grpc://, grpcs://")
+	cmd.Flags().StringArrayVar(&flagCallbackHeaders, "callback-header", nil, "Extra HTTP headers for http callbacks (key=value, repeatable)")
+	cmd.Flags().BoolVar(&flagCallbackTLSInsecure, "callback-tls-insecure", false, "Skip TLS verification for callback connections")
+	cmd.Flags().StringVar(&flagCallbackTLSCert, "callback-tls-cert", "", "Client TLS certificate for callback connections")
+	cmd.Flags().IntVar(&flagCallbackBufferSize, "callback-buffer-size", 1000, "Async send buffer size for callbacks")
+}
+
+// addDebugFlags registers the breakpoint and control flags (run and resume can both be debugged).
+func addDebugFlags(cmd *cobra.Command) {
+	cmd.Flags().StringArrayVar(&flagBreakpoints, "breakpoint", nil, `Breakpoint as a JSON object, e.g. {"workflow":"main","step":"build"} (repeatable; needs --control stdin)`)
+	cmd.Flags().StringVar(&flagBreakpointsFile, "breakpoints-file", "", "JSON file holding an array of breakpoint objects (needs --control stdin)")
+	cmd.Flags().StringArrayVar(&flagBreakShorthand, "break", nil, "Breakpoint shorthand workflow.step, resolved against the real workflow and step names (repeatable; needs --control stdin)")
+	cmd.Flags().BoolVar(&flagStep, "step", false, "Pause before every step (needs --control stdin)")
+	cmd.Flags().StringVar(&flagControl, "control", "", "Read debugger commands as JSON lines from this source (only: stdin)")
+}
+
 func main() {
 	stateStorePath := defaultStateStorePath()
 
@@ -87,11 +117,8 @@ func main() {
 	runCmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Show detailed execution output")
 	runCmd.Flags().BoolVar(&flagDebug, "debug", false, "Show debug logging for flag parsing, callback setup, and K8s client init")
 	runCmd.Flags().StringVar(&flagRunID, "run-id", "", "Use a specific run ID instead of generating one")
-	runCmd.Flags().StringArrayVar(&flagCallbacks, "callback", nil, "Callback destination URL (repeatable). Schemes: jsonl://, http://, https://, grpc://, grpcs://")
-	runCmd.Flags().StringArrayVar(&flagCallbackHeaders, "callback-header", nil, "Extra HTTP headers for http callbacks (key=value, repeatable)")
-	runCmd.Flags().BoolVar(&flagCallbackTLSInsecure, "callback-tls-insecure", false, "Skip TLS verification for callback connections")
-	runCmd.Flags().StringVar(&flagCallbackTLSCert, "callback-tls-cert", "", "Client TLS certificate for callback connections")
-	runCmd.Flags().IntVar(&flagCallbackBufferSize, "callback-buffer-size", 1000, "Async send buffer size for callbacks")
+	addCallbackFlags(runCmd)
+	addDebugFlags(runCmd)
 
 	resumeCmd := &cobra.Command{
 		Use:   "resume <run_id>",
@@ -102,6 +129,10 @@ func main() {
 	addStateStoreFlag(resumeCmd, stateStorePath)
 	resumeCmd.Flags().StringArrayVar(&flagVars, "var", nil, "Override vars before resuming (required for paused runs; key=value, repeatable)")
 	resumeCmd.Flags().StringVar(&flagSourceIntegrity, "source-integrity", "warn", "Source drift policy: warn, strict, or off")
+	resumeCmd.Flags().StringArrayVar(&flagRewind, "rewind", nil, `Re-run from a step of the entrypoint workflow, as JSON, e.g. {"workflow":"main","step":"build"} (repeatable; the earliest wins)`)
+	resumeCmd.Flags().BoolVar(&flagRewindChanged, "rewind-changed", false, "Re-run from the earliest completed step whose definition changed since it ran")
+	addCallbackFlags(resumeCmd)
+	addDebugFlags(resumeCmd)
 
 	statusCmd := &cobra.Command{
 		Use:   "status <run_id>",
@@ -135,7 +166,18 @@ func main() {
 	}
 	addStateStoreFlag(diagramCmd, stateStorePath)
 
-	root.AddCommand(runCmd, resumeCmd, statusCmd, listCmd, validateCmd, diagramCmd)
+	schemaCmd := &cobra.Command{
+		Use:   "schema",
+		Short: "Print the workflow format as JSON (step types, their parameters, and the file's fields)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(schema.Build())
+		},
+	}
+
+	root.AddCommand(runCmd, resumeCmd, statusCmd, listCmd, validateCmd, diagramCmd, schemaCmd)
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
@@ -203,6 +245,18 @@ func runWorkflow(cmd *cobra.Command, args []string) error {
 	}
 
 	ctx := context.Background()
+	dbg, err := buildDebugger(wfFile)
+	if err != nil {
+		return err
+	}
+	if dbg != nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+		dbg.SetCancel(cancel)
+		eng.SetDebugger(dbg)
+		go dbg.Serve(os.Stdin)
+	}
 	runID, err := eng.Run(ctx, flagWorkflow, vars)
 	if err != nil {
 		if engine.IsPaused(err) {
@@ -215,6 +269,80 @@ func runWorkflow(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("run %s completed successfully\n", runID)
 	return nil
+}
+
+// buildDebugger turns the breakpoint and control flags into a debugger, or nil when none are
+// given. Every breakpoint is resolved against the workflow file before the run starts, so a
+// typo fails here with the real names instead of silently never firing.
+func buildDebugger(file *parser.WorkflowFile) (*engine.Debugger, error) {
+	wantsBreaks := len(flagBreakpoints) > 0 || len(flagBreakShorthand) > 0 || flagBreakpointsFile != "" || flagStep
+	switch flagControl {
+	case "", "stdin":
+	default:
+		return nil, fmt.Errorf("--control %q is not supported (use stdin)", flagControl)
+	}
+	if !wantsBreaks && flagControl == "" {
+		return nil, nil
+	}
+	if wantsBreaks && flagControl != "stdin" {
+		return nil, fmt.Errorf("breakpoints and --step need --control stdin, so a paused run can be continued")
+	}
+
+	d := engine.NewDebugger(file)
+	var bps []engine.Breakpoint
+	for _, raw := range flagBreakpoints {
+		bp, err := decodeBreakpoint([]byte(raw))
+		if err != nil {
+			return nil, fmt.Errorf("--breakpoint %s: %w", raw, err)
+		}
+		bps = append(bps, bp)
+	}
+	if flagBreakpointsFile != "" {
+		data, err := os.ReadFile(flagBreakpointsFile)
+		if err != nil {
+			return nil, fmt.Errorf("--breakpoints-file: %w", err)
+		}
+		var raws []json.RawMessage
+		if err := json.Unmarshal(data, &raws); err != nil {
+			return nil, fmt.Errorf("--breakpoints-file %s: expected a JSON array of breakpoint objects: %w", flagBreakpointsFile, err)
+		}
+		for i, raw := range raws {
+			bp, err := decodeBreakpoint(raw)
+			if err != nil {
+				return nil, fmt.Errorf("--breakpoints-file %s, entry %d: %w", flagBreakpointsFile, i, err)
+			}
+			bps = append(bps, bp)
+		}
+	}
+	for _, s := range flagBreakShorthand {
+		bp, err := d.ResolveShorthand(s)
+		if err != nil {
+			return nil, err
+		}
+		bps = append(bps, bp)
+	}
+	_, rejected := d.SetBreakpoints(bps)
+	if len(rejected) > 0 {
+		var msgs []string
+		for _, r := range rejected {
+			msgs = append(msgs, fmt.Sprint(r["error"]))
+		}
+		return nil, fmt.Errorf("unresolved breakpoint(s): %s", strings.Join(msgs, "; "))
+	}
+	d.SetStepMode(flagStep)
+	return d, nil
+}
+
+// decodeBreakpoint reads one breakpoint object, rejecting unknown fields so a typo such as
+// "iteraton" is an error rather than a breakpoint that quietly matches too much.
+func decodeBreakpoint(raw []byte) (engine.Breakpoint, error) {
+	var bp engine.Breakpoint
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&bp); err != nil {
+		return bp, err
+	}
+	return bp, nil
 }
 
 func resumeWorkflow(cmd *cobra.Command, args []string) error {
@@ -248,6 +376,40 @@ func resumeWorkflow(cmd *cobra.Command, args []string) error {
 	eng.SourcePath = run.WorkflowFile
 	eng.SourceIntegrityMode = mode
 	configureSourceIdentity(eng)
+	for _, raw := range flagRewind {
+		var t engine.RewindTarget
+		dec := json.NewDecoder(strings.NewReader(raw))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&t); err != nil {
+			return fmt.Errorf("--rewind %s: %w", raw, err)
+		}
+		if t.Workflow == "" || t.Step == "" {
+			return fmt.Errorf("--rewind %s: needs a workflow and a step", raw)
+		}
+		eng.Rewind = append(eng.Rewind, t)
+	}
+	eng.RewindChanged = flagRewindChanged
+
+	cbs, err := buildCallbacks()
+	if err != nil {
+		return err
+	}
+	if len(cbs) > 0 {
+		eng.SetCallbacks(cbs)
+		defer eng.CloseCallbacks()
+	}
+	dbg, err := buildDebugger(wfFile)
+	if err != nil {
+		return err
+	}
+	if dbg != nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+		dbg.SetCancel(cancel)
+		eng.SetDebugger(dbg)
+		go dbg.Serve(os.Stdin)
+	}
 	err = eng.ResumeWithVars(ctx, args[0], parseVarFlags(flagVars))
 	if engine.IsPaused(err) {
 		fmt.Printf("run %s remains paused; supply different --var approval input to resume\n", args[0])

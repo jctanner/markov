@@ -73,3 +73,15 @@ Added `ansible_playbook` and `ansible` primitives with inline/path inventory, ex
 ## 2026-10-05 — claude step type
 
 Added the `claude` primitive with live stream-json processing, Markov-enforced limits, and a new `step_progress` callback event. Verified against the real CLI with the OAuth login (no API key). See [task](../tasks/done/claude-step-type.md) and [ADR-0004](../decisions/ADR-0004-claude-step-type.md).
+
+## 2026-10-05 — In-memory debugger
+
+Added `--control stdin`, `--breakpoint`, `--breakpoints-file`, `--break` and `--step`, a `debug` callback event, and `pkg/engine/debug.go` (ADR-0005, plan 001). See [task](../tasks/done/breakpoint-engine.md).
+
+## 2026-10-05 — Step hashes and rewind
+
+Step rows store a hash of their definition; resume reports edited completed steps, and `resume --rewind` / `--rewind-changed` re-run from a step (sub-workflow edits rewind to the call). See [task](../tasks/done/step-definition-hash-and-rewind.md).
+
+## 2026-10-05 — markov schema
+
+`markov schema` describes the file, workflow and step fields and every built-in step type with its parameters; a test keeps the table in step with the reference docs. See [task](../tasks/done/markov-schema.md).

@@ -345,6 +345,16 @@ var primitives = map[string]bool{
 	"assert":           true,
 }
 
+// PrimitiveNames lists the built-in step types, sorted.
+func PrimitiveNames() []string {
+	names := make([]string, 0, len(primitives))
+	for n := range primitives {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
 func resolveType(wf *WorkflowFile, typeName string) error {
 	if primitives[typeName] {
 		return nil

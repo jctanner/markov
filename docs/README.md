@@ -33,6 +33,7 @@ Complete, field-by-field documentation for the markov YAML DSL:
 - [Artifacts](reference/artifacts.md) — loading YAML, markdown, and table files into the context
 - [Callbacks](reference/callbacks.md) — event system, HTTP/gRPC/JSONL backends, event types
 - [CLI](reference/cli.md) — all commands and flags
+- [Step-Through Debugging](reference/debugging.md) — breakpoints, step mode, and the stdin control protocol
 - [State Store](reference/state-store.md) — checkpoint/resume, SQLite and Postgres backends, resume flow
 
 - [Jev decisions](reference/jev.md) — connections, native steps, inline conditions, and decision-backed gates

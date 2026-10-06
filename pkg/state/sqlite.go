@@ -52,6 +52,7 @@ func migrate(db *sql.DB) error {
 			error           TEXT,
 			started_at      TIMESTAMP,
 			completed_at    TIMESTAMP,
+			definition_hash TEXT,
 			PRIMARY KEY (run_id, workflow_name, step_name)
 		);
 
@@ -69,6 +70,9 @@ func migrate(db *sql.DB) error {
 		return fmt.Errorf("migrating schema: %w", err)
 	}
 	if err := ensureSQLiteColumn(db, "runs", "source_digest", "TEXT"); err != nil {
+		return err
+	}
+	if err := ensureSQLiteColumn(db, "steps", "definition_hash", "TEXT"); err != nil {
 		return err
 	}
 	return nil
@@ -261,18 +265,19 @@ func (s *SQLiteStore) GetSourceChecks(ctx context.Context, runID string) ([]*Sou
 
 func (s *SQLiteStore) SaveStep(ctx context.Context, step *StepResult) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO steps (run_id, workflow_name, step_name, status, output_json, artifacts_json, error, started_at, completed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO steps (run_id, workflow_name, step_name, status, output_json, artifacts_json, error, started_at, completed_at, definition_hash)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (run_id, workflow_name, step_name) DO UPDATE SET
 			status = excluded.status,
 			output_json = excluded.output_json,
 			artifacts_json = excluded.artifacts_json,
 			error = excluded.error,
 			started_at = excluded.started_at,
-			completed_at = excluded.completed_at`,
+			completed_at = excluded.completed_at,
+			definition_hash = excluded.definition_hash`,
 		step.RunID, step.WorkflowName, step.StepName, step.Status,
 		nullStr(step.OutputJSON), nullStr(step.ArtifactsJSON), nullStr(step.Error),
-		step.StartedAt, step.CompletedAt)
+		step.StartedAt, step.CompletedAt, nullStr(step.DefinitionHash))
 	if err != nil {
 		return fmt.Errorf("saving step: %w", err)
 	}
@@ -281,7 +286,7 @@ func (s *SQLiteStore) SaveStep(ctx context.Context, step *StepResult) error {
 
 func (s *SQLiteStore) GetSteps(ctx context.Context, runID string) ([]*StepResult, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT run_id, workflow_name, step_name, status, output_json, artifacts_json, error, started_at, completed_at
+		SELECT run_id, workflow_name, step_name, status, output_json, artifacts_json, error, started_at, completed_at, definition_hash
 		FROM steps WHERE run_id = ? ORDER BY started_at`, runID)
 	if err != nil {
 		return nil, fmt.Errorf("getting steps: %w", err)
@@ -291,15 +296,16 @@ func (s *SQLiteStore) GetSteps(ctx context.Context, runID string) ([]*StepResult
 	var steps []*StepResult
 	for rows.Next() {
 		var s StepResult
-		var outputJSON, artifactsJSON, stepErr sql.NullString
+		var outputJSON, artifactsJSON, stepErr, defHash sql.NullString
 		var startedAt, completedAt sql.NullTime
 		if err := rows.Scan(&s.RunID, &s.WorkflowName, &s.StepName, &s.Status,
-			&outputJSON, &artifactsJSON, &stepErr, &startedAt, &completedAt); err != nil {
+			&outputJSON, &artifactsJSON, &stepErr, &startedAt, &completedAt, &defHash); err != nil {
 			return nil, fmt.Errorf("scanning step: %w", err)
 		}
 		s.OutputJSON = outputJSON.String
 		s.ArtifactsJSON = artifactsJSON.String
 		s.Error = stepErr.String
+		s.DefinitionHash = defHash.String
 		if startedAt.Valid {
 			s.StartedAt = &startedAt.Time
 		}
@@ -316,15 +322,15 @@ func (s *SQLiteStore) GetSteps(ctx context.Context, runID string) ([]*StepResult
 
 func (s *SQLiteStore) GetStep(ctx context.Context, runID, workflowName, stepName string) (*StepResult, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT run_id, workflow_name, step_name, status, output_json, artifacts_json, error, started_at, completed_at
+		SELECT run_id, workflow_name, step_name, status, output_json, artifacts_json, error, started_at, completed_at, definition_hash
 		FROM steps WHERE run_id = ? AND workflow_name = ? AND step_name = ?`,
 		runID, workflowName, stepName)
 
 	var sr StepResult
-	var outputJSON, artifactsJSON, stepErr sql.NullString
+	var outputJSON, artifactsJSON, stepErr, defHash sql.NullString
 	var startedAt, completedAt sql.NullTime
 	err := row.Scan(&sr.RunID, &sr.WorkflowName, &sr.StepName, &sr.Status,
-		&outputJSON, &artifactsJSON, &stepErr, &startedAt, &completedAt)
+		&outputJSON, &artifactsJSON, &stepErr, &startedAt, &completedAt, &defHash)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -334,6 +340,7 @@ func (s *SQLiteStore) GetStep(ctx context.Context, runID, workflowName, stepName
 	sr.OutputJSON = outputJSON.String
 	sr.ArtifactsJSON = artifactsJSON.String
 	sr.Error = stepErr.String
+	sr.DefinitionHash = defHash.String
 	if startedAt.Valid {
 		sr.StartedAt = &startedAt.Time
 	}
@@ -352,4 +359,14 @@ func nullStr(s string) sql.NullString {
 
 func timePtr(t time.Time) *time.Time {
 	return &t
+}
+
+// DeleteSteps removes the named step rows of a run.
+func (s *SQLiteStore) DeleteSteps(ctx context.Context, runID string, stepNames []string) error {
+	for _, name := range stepNames {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM steps WHERE run_id = ? AND step_name = ?`, runID, name); err != nil {
+			return fmt.Errorf("deleting step %q: %w", name, err)
+		}
+	}
+	return nil
 }

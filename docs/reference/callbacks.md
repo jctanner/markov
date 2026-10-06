@@ -94,7 +94,7 @@ All events share a common header:
 | `run_completed` | Run succeeds | `workflow_name`, `duration_seconds` |
 | `run_failed` | Run fails | `workflow_name`, `error`, `duration_seconds` |
 | `run_paused` | A gate intentionally pauses the run | `workflow_name`, `step_name`, `fired_rules`, `facts`, `duration_seconds` |
-| `run_resumed` | Run is resumed | `workflow_name`, `completed_steps`, `remaining_steps`, `source_integrity_mode`, `expected_source_digest`, `observed_source_digest`, `source_drifted` |
+| `run_resumed` | Run is resumed | `workflow_name`, `completed_steps`, `remaining_steps`, `source_integrity_mode`, `expected_source_digest`, `observed_source_digest`, `source_drifted`, `changed_steps` (completed steps whose definition changed: `run_id`, `workflow`, `step`), `rewound` |
 
 ### Step lifecycle events
 
@@ -107,6 +107,25 @@ All events share a common header:
 | `step_progress` | Live progress from inside a running step (currently emitted by `claude`) | `workflow_name`, `step_name`, `step_type`, `kind`, `data` |
 
 `step_progress` events are informational: they are delivered to callbacks only and are not stored in the state store. For `claude` steps, `kind` is one of `init`, `text`, `tool_use`, `tool_result`, `usage` (running `turns` and `tokens` totals), `limit_exceeded`, or `result`. See [claude](step-types.md#claude).
+
+### Debug events
+
+| Event | Description | Key fields |
+|-------|-------------|------------|
+| `debug` | Debugger activity during a [step-through](debugging.md) run | `workflow_name`, `step_name` (when about a step), `kind`, `data` |
+
+`kind` is one of:
+
+| Kind | Meaning | `data` |
+|------|---------|--------|
+| `breakpoints_set` | A `set_breakpoints` command was applied | `resolved` (normalized breakpoints), `unresolved` (each with `error`) |
+| `paused` | A step is held at a breakpoint or in step mode | `reason`, `phase`, `section`, `iteration`, `step_type`, `variables`, optional `output` (after phase), and `hits` or `condition`/`error` |
+| `resumed` | The pause was released | `command` |
+| `logpoint` | A logpoint rendered its message | `message`, `phase`, `section`, `iteration` |
+| `evaluated` | Answer to `evaluate` | `id`, `expression`, `result` or `error` |
+| `error` | A control command was invalid | `error` |
+
+Debug events are informational and are not stored in the state store.
 
 ### Kubernetes events
 

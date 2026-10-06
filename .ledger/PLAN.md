@@ -7,6 +7,7 @@
 ## Plans
 
 - [Directory Workflow Files Plan](plans/000-directory-workflow-files.md)
+- [Step-Through Debugging and Interactive Workflow Building](plans/001-step-through-debugging.md)
 
 ## Active Tasks
 
@@ -14,7 +15,7 @@
 
 ## Pending Tasks
 
-- None
+- [Step source positions in events and errors](tasks/pending/step-source-positions.md)
 
 ## Completed Tasks
 
@@ -25,6 +26,9 @@
 - [Add k8s_job_wait step type](tasks/done/k8s-job-wait-step-type.md)
 - [Add Postgres state store support](tasks/done/postgres-state-store.md)
 - [Add claude step type](tasks/done/claude-step-type.md)
+- [Breakpoints, step mode and control channel](tasks/done/breakpoint-engine.md)
+- [Step definition hash and rewind on resume](tasks/done/step-definition-hash-and-rewind.md)
+- [markov schema](tasks/done/markov-schema.md)
 - [Add ansible and ansible_playbook step types](tasks/done/ansible-step-types.md)
 - [Define directory workflow schema](tasks/done/directory-workflow-schema.md)
 - [Implement directory loader and merge validation](tasks/done/directory-loader-merge-validation.md)
@@ -47,3 +51,4 @@
 
 - [ADR-0003: Durable Jev decisions](decisions/ADR-0003-durable-jev-decisions.md)
 - [ADR-0004: Native claude step with Markov-enforced limits](decisions/ADR-0004-claude-step-type.md)
+- [ADR-0005: In-memory debugger with a stdin control protocol](decisions/ADR-0005-in-memory-debugger-and-control-protocol.md)

@@ -280,3 +280,44 @@ func containsRun(runs []*Run, runID string) bool {
 	}
 	return false
 }
+
+func TestStepDefinitionHashRoundTripsAndDeleteStepsRemovesRows(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "hash.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	for _, s := range []*StepResult{
+		{RunID: "r", WorkflowName: "w", StepName: "a", Status: StepCompleted, DefinitionHash: "abc123"},
+		{RunID: "r", WorkflowName: "w", StepName: "b[1]", Status: StepCompleted},
+		{RunID: "r", WorkflowName: "w", StepName: "c", Status: StepCompleted, DefinitionHash: "def456"},
+		{RunID: "other", WorkflowName: "w", StepName: "a", Status: StepCompleted, DefinitionHash: "keep"},
+	} {
+		if err := store.SaveStep(ctx, s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := store.GetStep(ctx, "r", "w", "a")
+	if err != nil || got == nil || got.DefinitionHash != "abc123" {
+		t.Fatalf("GetStep = %+v, %v", got, err)
+	}
+	if b, _ := store.GetStep(ctx, "r", "w", "b[1]"); b == nil || b.DefinitionHash != "" {
+		t.Errorf("a row saved without a hash reads back empty: %+v", b)
+	}
+	// Re-saving updates the hash.
+	store.SaveStep(ctx, &StepResult{RunID: "r", WorkflowName: "w", StepName: "a", Status: StepCompleted, DefinitionHash: "new"})
+	if got, _ := store.GetStep(ctx, "r", "w", "a"); got.DefinitionHash != "new" {
+		t.Errorf("hash after update = %q", got.DefinitionHash)
+	}
+	if err := store.DeleteSteps(ctx, "r", []string{"a", "b[1]", "missing"}); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := store.GetSteps(ctx, "r")
+	if len(rows) != 1 || rows[0].StepName != "c" || rows[0].DefinitionHash != "def456" {
+		t.Errorf("rows after delete = %+v", rows)
+	}
+	if other, _ := store.GetStep(ctx, "other", "w", "a"); other == nil || other.DefinitionHash != "keep" {
+		t.Error("another run's rows must not be touched")
+	}
+}

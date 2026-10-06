@@ -42,6 +42,13 @@ type RunPausedEvent struct {
 	Duration     float64        `json:"duration_seconds"`
 }
 
+// ChangedStepInfo names a completed step whose definition changed since it ran.
+type ChangedStepInfo struct {
+	RunID    string `json:"run_id"`
+	Workflow string `json:"workflow"`
+	Step     string `json:"step"`
+}
+
 type RunResumedEvent struct {
 	EventHeader
 	WorkflowName         string `json:"workflow_name"`
@@ -51,6 +58,10 @@ type RunResumedEvent struct {
 	ExpectedSourceDigest string `json:"expected_source_digest,omitempty"`
 	ObservedSourceDigest string `json:"observed_source_digest,omitempty"`
 	SourceDrifted        bool   `json:"source_drifted"`
+	// ChangedSteps lists completed steps whose definition changed since they ran.
+	ChangedSteps []ChangedStepInfo `json:"changed_steps,omitempty"`
+	// Rewound is true when the run was rewound (--rewind or --rewind-changed) before resuming.
+	Rewound bool `json:"rewound,omitempty"`
 }
 
 type StepStartedEvent struct {
@@ -110,6 +121,17 @@ type StepProgressEvent struct {
 	Data         map[string]any `json:"data,omitempty"`
 }
 
+// DebugEvent reports debugger activity: breakpoints accepted, a run paused or resumed at a
+// step, a logpoint, or the result of an `evaluate` command. Kinds and their data are described
+// in docs/reference/debugging.md. Debug events are informational and are not persisted.
+type DebugEvent struct {
+	EventHeader
+	WorkflowName string         `json:"workflow_name,omitempty"`
+	StepName     string         `json:"step_name,omitempty"`
+	Kind         string         `json:"kind"`
+	Data         map[string]any `json:"data,omitempty"`
+}
+
 type GateEvaluatedEvent struct {
 	EventHeader
 	WorkflowName string         `json:"workflow_name"`
@@ -159,6 +181,7 @@ type Callback interface {
 	OnStepSkipped(event StepSkippedEvent) error
 
 	OnStepProgress(event StepProgressEvent) error
+	OnDebug(event DebugEvent) error
 
 	OnJobCreated(event JobCreatedEvent) error
 	OnGateEvaluated(event GateEvaluatedEvent) error

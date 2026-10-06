@@ -42,6 +42,10 @@ type Engine struct {
 	SourceIntegrityMode SourceIntegrityMode
 	sourceDigest        string
 	callbacks           []callback.Callback
+	debugger            *Debugger
+	// Rewind and RewindChanged make ResumeWithVars re-run from a step (see rewind.go).
+	Rewind        []RewindTarget
+	RewindChanged bool
 }
 
 // SourceIntegrityMode controls behavior when source files differ at resume.
@@ -102,13 +106,14 @@ func New(file *parser.WorkflowFile, store state.Store, executors map[string]exec
 	if forks <= 0 {
 		forks = 5
 	}
-	return &Engine{
+	e := &Engine{
 		file:      file,
-		store:     store,
 		tmpl:      template.New(),
 		executors: executors,
 		forks:     forks,
 	}
+	e.store = &hashingStore{Store: store, e: e}
+	return e
 }
 
 func (e *Engine) SetK8sClient(client kubernetes.Interface, cfg *rest.Config) {
@@ -163,6 +168,9 @@ func (e *Engine) Run(ctx context.Context, workflowName string, vars map[string]a
 	runID := e.RunID
 	if runID == "" {
 		runID = uuid.New().String()[:8]
+	}
+	if e.debugger != nil {
+		e.debugger.noteRun(runID)
 	}
 	varsJSON, _ := json.Marshal(runCtx)
 
@@ -256,8 +264,12 @@ func (e *Engine) ResumeWithVars(ctx context.Context, runID string, vars map[stri
 	if err != nil {
 		return err
 	}
-	if run.Status != state.RunFailed && run.Status != state.RunPaused {
-		return fmt.Errorf("run %q has status %q; only failed or paused runs can be resumed", runID, run.Status)
+	if e.debugger != nil {
+		e.debugger.noteRun(runID)
+	}
+	rewinding := len(e.Rewind) > 0 || e.RewindChanged
+	if run.Status != state.RunFailed && run.Status != state.RunPaused && !(rewinding && run.Status == state.RunCompleted) {
+		return fmt.Errorf("run %q has status %q; only failed or paused runs can be resumed (a completed run can be rewound with --rewind)", runID, run.Status)
 	}
 	if run.Status == state.RunPaused && len(vars) == 0 {
 		return fmt.Errorf("paused run %q requires at least one --var override to resume", runID)
@@ -271,6 +283,11 @@ func (e *Engine) ResumeWithVars(ctx context.Context, runID string, vars map[stri
 	wf := e.file.GetWorkflow(run.Entrypoint)
 	if wf == nil {
 		return fmt.Errorf("workflow %q not found", run.Entrypoint)
+	}
+
+	changed, rewound, err := e.prepareResume(ctx, run)
+	if err != nil {
+		return err
 	}
 
 	var storedVars map[string]any
@@ -344,6 +361,8 @@ func (e *Engine) ResumeWithVars(ctx context.Context, runID string, vars map[stri
 			ExpectedSourceDigest: check.ExpectedDigest,
 			ObservedSourceDigest: check.ObservedDigest,
 			SourceDrifted:        check.SourceDrifted,
+			ChangedSteps:         changedStepEvents(e, changed),
+			Rewound:              rewound,
 		})
 	})
 
@@ -501,6 +520,30 @@ func (e *Engine) executeStepWithStateName(ctx context.Context, runID string, wor
 }
 
 func (e *Engine) executeStepWithOptions(ctx context.Context, runID string, workflowName string, step parser.Step, stateStepName string, runCtx map[string]any, force bool) error {
+	if e.debugger == nil {
+		return e.executeStepCore(ctx, runID, workflowName, step, stateStepName, runCtx, force)
+	}
+	before, _ := e.store.GetStep(ctx, runID, workflowName, stateStepName)
+	if err := e.executeStepCore(ctx, runID, workflowName, step, stateStepName, runCtx, force); err != nil {
+		return err
+	}
+	// Pause "after" only when this call actually completed the step (not when it was skipped or
+	// replayed from a previous run).
+	after, _ := e.store.GetStep(ctx, runID, workflowName, stateStepName)
+	if after == nil || after.Status != state.StepCompleted {
+		return nil
+	}
+	if before != nil && before.Status == state.StepCompleted && before.CompletedAt != nil && after.CompletedAt != nil && !after.CompletedAt.After(*before.CompletedAt) {
+		return nil
+	}
+	var output map[string]any
+	if after.OutputJSON != "" {
+		json.Unmarshal([]byte(after.OutputJSON), &output)
+	}
+	return e.debugPause(ctx, runID, workflowName, step, stateStepName, phaseAfter, runCtx, output)
+}
+
+func (e *Engine) executeStepCore(ctx context.Context, runID string, workflowName string, step parser.Step, stateStepName string, runCtx map[string]any, force bool) error {
 	existing, _ := e.store.GetStep(ctx, runID, workflowName, stateStepName)
 	if !force && existing != nil && existing.Status == state.StepCompleted {
 		log.Printf("[run:%s] skipping completed step %q", runID, step.Name)
@@ -550,6 +593,11 @@ func (e *Engine) executeStepWithOptions(ctx context.Context, runID string, workf
 			})
 			return nil
 		}
+	}
+
+	// The step will run: give the debugger a chance to pause before it starts.
+	if err := e.debugPause(ctx, runID, workflowName, step, stateStepName, phaseBefore, runCtx, nil); err != nil {
+		return e.failStep(ctx, runID, workflowName, stateStepName, step.Type, time.Now(), err)
 	}
 
 	if step.ForEach != "" {

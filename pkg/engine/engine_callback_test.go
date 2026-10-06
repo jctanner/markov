@@ -63,6 +63,9 @@ func (m *mockCallback) OnStepSkipped(e callback.StepSkippedEvent) error {
 func (m *mockCallback) OnStepProgress(e callback.StepProgressEvent) error {
 	return m.record("step_progress", e)
 }
+func (m *mockCallback) OnDebug(e callback.DebugEvent) error {
+	return m.record("debug", e)
+}
 func (m *mockCallback) OnJobCreated(e callback.JobCreatedEvent) error {
 	return m.record("job_created", e)
 }
@@ -457,6 +460,7 @@ func (e *errorCallback) OnStepSkipped(callback.StepSkippedEvent) error { return 
 func (e *errorCallback) OnStepProgress(callback.StepProgressEvent) error {
 	return fmt.Errorf("cb error")
 }
+func (e *errorCallback) OnDebug(callback.DebugEvent) error           { return fmt.Errorf("cb error") }
 func (e *errorCallback) OnJobCreated(callback.JobCreatedEvent) error { return fmt.Errorf("cb error") }
 func (e *errorCallback) OnGateEvaluated(callback.GateEvaluatedEvent) error {
 	return fmt.Errorf("cb error")

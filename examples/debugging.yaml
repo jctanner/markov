@@ -1,0 +1,26 @@
+# A small workflow for trying step-through debugging; see docs/reference/debugging.md.
+# markov run examples/debugging.yaml --control stdin --callback jsonl:///tmp/events.jsonl --break main.greet
+entrypoint: main
+vars:
+  hosts: [web-1, web-2]
+workflows:
+  - name: main
+    steps:
+      - name: set level
+        type: set_fact
+        vars:
+          level: 7
+      - name: greet
+        type: shell_exec
+        params:
+          command: "echo hello level={{ level }}"
+      - name: each host
+        type: shell_exec
+        for_each: hosts
+        as: host
+        params:
+          command: "echo {{ host }}"
+      - name: done
+        type: shell_exec
+        params:
+          command: echo done

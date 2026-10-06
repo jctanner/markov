@@ -118,6 +118,17 @@ completed `register`, `set_fact`, or artifact-producing step, or reordering a
 list-based fan-out without stable keys: source-integrity tracking makes the
 change visible, but it cannot make an incompatible checkpoint safe.
 
+### An edited step is reused unless you rewind
+
+A completed step is skipped by name, so editing it and resuming does **not** run the new version: the saved output is reused. Resume tells you when this happens (`step "a" ... was completed with a different definition`). To run it again:
+
+```bash
+markov resume <run_id> --rewind-changed                       # from the earliest edited step
+markov resume <run_id> --rewind '{"workflow":"main","step":"a"}'   # from a step you choose
+```
+
+Everything from that step on runs again with the current workflow; earlier steps keep their results. See [Edited steps and rewinding](../reference/state-store.md#edited-steps-and-rewinding).
+
 ## Fan-Out Resume
 
 For production fan-outs, prefer sub-workflow fan-out with `for_each_key`:
@@ -196,6 +207,10 @@ The `run_id` is not present in the selected state store. Check the run ID and th
 ### `workflow "<name>" not found`
 
 The workflow source changed or the stored path now points at a different file or directory. Restore the workflow with the same `name:` that was used by the original run.
+
+### A completed step did not run again after I edited it
+
+Completed steps are reused by name. Use `--rewind-changed` (or `--rewind`) so it runs with the new definition; see above.
 
 ### A completed step ran again
 

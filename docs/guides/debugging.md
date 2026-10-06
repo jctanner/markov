@@ -18,6 +18,10 @@ Output includes:
 - Artifact loading details
 - K8s job names and images
 
+## Stepping Through a Run
+
+To pause at a step, inspect the variables the next step will see, and continue one step at a time, see [Step-Through Debugging](../reference/debugging.md). It uses `--control stdin` with `--breakpoint`, `--break`, or `--step`.
+
 ## Debug Logging
 
 The `--debug` flag enables deeper diagnostic logging (and implies `--verbose`):
