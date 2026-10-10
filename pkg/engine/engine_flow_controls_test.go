@@ -269,3 +269,27 @@ func TestForEachStopsAfterAFailureWithConcurrencyOne(t *testing.T) {
 		t.Fatalf("items run: %#v (c must not start after b failed)", got)
 	}
 }
+
+func TestResumeKeepsWholeNumbersAsInts(t *testing.T) {
+	rec := &recordExec{}
+	wf := &parser.WorkflowFile{
+		Entrypoint: "main",
+		Vars:       map[string]any{"weight": 2, "allow": false},
+		Workflows: []parser.Workflow{{Name: "main", Steps: []parser.Step{
+			{Name: "count", Type: "set_fact", Vars: map[string]any{"total": "{{ weight + 1 }}"}},
+			{Name: "gate", Type: "assert", That: []string{"allow"}},
+			{Name: "use", Type: "shell_exec", Params: map[string]any{"msg": "{{ weight }}/{{ total }}"}},
+		}}},
+	}
+	eng, _ := newTestEngine(t, wf, map[string]executor.Executor{"shell_exec": rec})
+	runID, err := eng.Run(context.Background(), "main", nil)
+	if err == nil {
+		t.Fatal("first attempt should fail at the assert")
+	}
+	if err := eng.ResumeWithVars(context.Background(), runID, map[string]any{"allow": true}); err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if got := rec.messages(); !reflect.DeepEqual(got, []any{"2/3"}) {
+		t.Fatalf("after resume: %#v (numbers must not come back as floats)", got)
+	}
+}

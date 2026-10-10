@@ -293,7 +293,7 @@ func (e *Engine) ResumeWithVars(ctx context.Context, runID string, vars map[stri
 	}
 
 	var storedVars map[string]any
-	json.Unmarshal([]byte(run.VarsJSON), &storedVars)
+	decodeState(run.VarsJSON, &storedVars)
 	if storedVars == nil {
 		storedVars = make(map[string]any)
 	}
@@ -313,13 +313,13 @@ func (e *Engine) ResumeWithVars(ctx context.Context, runID string, vars map[stri
 		if s.Status == state.StepCompleted {
 			if isSetFactStep(wf, s.StepName) && s.OutputJSON != "" {
 				var facts map[string]any
-				json.Unmarshal([]byte(s.OutputJSON), &facts)
+				decodeState(s.OutputJSON, &facts)
 				for k, v := range facts {
 					runCtx[k] = v
 				}
 			} else if isGateStep(wf, s.StepName) && s.OutputJSON != "" {
 				var output map[string]any
-				json.Unmarshal([]byte(s.OutputJSON), &output)
+				decodeState(s.OutputJSON, &output)
 				if facts, ok := output["facts"].(map[string]any); ok {
 					for k, v := range facts {
 						runCtx[k] = v
@@ -327,11 +327,11 @@ func (e *Engine) ResumeWithVars(ctx context.Context, runID string, vars map[stri
 				}
 			} else if s.ArtifactsJSON != "" {
 				var stepData map[string]any
-				json.Unmarshal([]byte(s.ArtifactsJSON), &stepData)
+				decodeState(s.ArtifactsJSON, &stepData)
 				runCtx[s.StepName] = stepData
 			} else if s.OutputJSON != "" {
 				var output map[string]any
-				json.Unmarshal([]byte(s.OutputJSON), &output)
+				decodeState(s.OutputJSON, &output)
 				runCtx[s.StepName] = output
 			}
 		}
@@ -551,7 +551,7 @@ func (e *Engine) executeStepCore(ctx context.Context, runID string, workflowName
 		log.Printf("[run:%s] skipping completed step %q", runID, step.Name)
 		if existing.OutputJSON != "" {
 			var output map[string]any
-			json.Unmarshal([]byte(existing.OutputJSON), &output)
+			decodeState(existing.OutputJSON, &output)
 			if step.Type == "set_fact" {
 				for k, v := range output {
 					runCtx[k] = v
@@ -1436,6 +1436,42 @@ func (e *Engine) resolveForEachList(expr string, ctx map[string]any) ([]any, err
 		return nil, fmt.Errorf("for_each expression %q did not resolve to a list", expr)
 	}
 	return list, nil
+}
+
+// decodeState reads JSON saved in the state store back into workflow values. Whole numbers come
+// back as int, as they were before saving; plain json.Unmarshal would make them float64, which
+// templates print as "2.000000" after a resume.
+func decodeState(data string, out *map[string]any) {
+	dec := json.NewDecoder(strings.NewReader(data))
+	dec.UseNumber()
+	var raw map[string]any
+	if err := dec.Decode(&raw); err != nil {
+		return
+	}
+	*out, _ = normalizeNumbers(raw).(map[string]any)
+}
+
+func normalizeNumbers(v any) any {
+	switch val := v.(type) {
+	case json.Number:
+		if i, err := val.Int64(); err == nil {
+			return int(i)
+		}
+		f, _ := val.Float64()
+		return f
+	case map[string]any:
+		for k, item := range val {
+			val[k] = normalizeNumbers(item)
+		}
+		return val
+	case []any:
+		for i, item := range val {
+			val[i] = normalizeNumbers(item)
+		}
+		return val
+	default:
+		return v
+	}
 }
 
 // asList accepts any slice value, such as the []any or []string a filter returns.
