@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -1199,11 +1200,13 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 	var results []map[string]any
 	var firstErr error
 	var errOnce sync.Once
+	// failed is set with firstErr, so the loop can check it without a data race.
+	var failed atomic.Bool
 
 	var wg sync.WaitGroup
 
 	for i, item := range listVal {
-		if firstErr != nil {
+		if failed.Load() {
 			break
 		}
 
@@ -1215,7 +1218,7 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 			whenCtx[step.As] = item
 			ok, err := e.tmpl.EvalBool(step.ForEachWhen, whenCtx)
 			if err != nil {
-				errOnce.Do(func() { firstErr = fmt.Errorf("evaluating for_each_when for item %d: %w", i, err) })
+				errOnce.Do(func() { failed.Store(true); firstErr = fmt.Errorf("evaluating for_each_when for item %d: %w", i, err) })
 				break
 			}
 			if !ok {
@@ -1225,6 +1228,12 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 		}
 
 		sem <- struct{}{}
+		// Waiting for a slot can outlast an earlier item's failure: check again, so no new item
+		// starts after one has failed (with concurrency 1, the next item used to run anyway).
+		if failed.Load() {
+			<-sem
+			break
+		}
 		wg.Add(1)
 
 		go func(idx int, itemVal any) {
@@ -1240,7 +1249,7 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 			if step.Workflow != "" {
 				wf := e.file.GetWorkflow(step.Workflow)
 				if wf == nil {
-					errOnce.Do(func() { firstErr = fmt.Errorf("sub-workflow %q not found", step.Workflow) })
+					errOnce.Do(func() { failed.Store(true); firstErr = fmt.Errorf("sub-workflow %q not found", step.Workflow) })
 					return
 				}
 
@@ -1255,7 +1264,7 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 				if step.Vars != nil {
 					rendered, err := e.tmpl.RenderMap(step.Vars, itemCtx)
 					if err != nil {
-						errOnce.Do(func() { firstErr = fmt.Errorf("rendering sub-workflow vars: %w", err) })
+						errOnce.Do(func() { failed.Store(true); firstErr = fmt.Errorf("rendering sub-workflow vars: %w", err) })
 						return
 					}
 					for k, v := range rendered {
@@ -1304,7 +1313,7 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 				if paused, ok := pauseError(err); ok {
 					subRun.Status = state.RunPaused
 					subRun.CompletedAt = nil
-					errOnce.Do(func() { firstErr = err })
+					errOnce.Do(func() { failed.Store(true); firstErr = err })
 					e.fireEvent(func(cb callback.Callback) error {
 						return cb.OnRunPaused(callback.RunPausedEvent{
 							EventHeader:  callback.EventHeader{Timestamp: feNow, RunID: subRunID, EventType: "run_paused"},
@@ -1322,7 +1331,7 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 						log.Printf("[run:%s] for_each %q item %s failed, ignored (ignore_errors): %v", runID, step.Name, forEachKey, err)
 						subVars = ignoredFailure(subVars, err)
 					} else {
-						errOnce.Do(func() { firstErr = err })
+						errOnce.Do(func() { failed.Store(true); firstErr = err })
 					}
 					e.fireEvent(func(cb callback.Callback) error {
 						return cb.OnSubRunFailed(callback.SubRunFailedEvent{
@@ -1368,7 +1377,7 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 				err := e.executeStepWithStateName(ctx, runID, workflowName, subStep, stateStepName, itemCtx)
 				if err != nil {
 					if !step.IgnoreErrors || IsPaused(err) {
-						errOnce.Do(func() { firstErr = err })
+						errOnce.Do(func() { failed.Store(true); firstErr = err })
 						return
 					}
 					itemCtx = ignoredFailure(itemCtx, err)

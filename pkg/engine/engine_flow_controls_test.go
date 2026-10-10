@@ -243,3 +243,29 @@ func TestFailedWhen(t *testing.T) {
 		})
 	}
 }
+
+func TestForEachStopsAfterAFailureWithConcurrencyOne(t *testing.T) {
+	rec := &recordExec{}
+	wf := &parser.WorkflowFile{
+		Entrypoint: "main",
+		Vars: map[string]any{"items": []any{
+			map[string]any{"id": "a", "fail": false},
+			map[string]any{"id": "b", "fail": true},
+			map[string]any{"id": "c", "fail": false},
+		}},
+		Workflows: []parser.Workflow{
+			{Name: "main", Steps: []parser.Step{{
+				Name: "each", ForEach: "items", ForEachKey: "id", As: "item", Concurrency: 1, Workflow: "one",
+			}}},
+			{Name: "one", Steps: []parser.Step{
+				{Name: "work", Type: "shell_exec", Params: map[string]any{"msg": "{{ item.id }}", "fail": "{{ item.fail }}"}},
+			}},
+		},
+	}
+	if _, err := runMain(t, wf, rec); err == nil {
+		t.Fatal("expected the loop to fail")
+	}
+	if got := rec.messages(); !reflect.DeepEqual(got, []any{"a", "b"}) {
+		t.Fatalf("items run: %#v (c must not start after b failed)", got)
+	}
+}

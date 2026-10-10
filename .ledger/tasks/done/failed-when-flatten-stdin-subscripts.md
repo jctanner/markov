@@ -17,6 +17,14 @@ benchmark. The first round is in
 | `script_exec` `stdin` | A single process argument is capped at about 128 KB on Linux. `stdin` has no cap; a map or list is sent as JSON. |
 | Chained subscripts | pongo2 v6.0.0 stopped parsing a variable after `[subscript]`, so `tiers[tier].tests` failed. Markov now builds with a patched copy in `third_party/pongo2`: a one-line `continue` in `parseVariableOrLiteral`. Patches are listed in `third_party/pongo2/MARKOV_PATCHES.md`. The Dockerfile copies `third_party/` before `go mod download`. |
 
+## Bug fixed on the way
+
+`for_each` checked for an earlier failure before waiting for a free slot, so
+with `concurrency: 1` the item after a failed one still started. It now
+checks again after taking the slot, using an atomic flag set with the first
+error. Found by Breadboard's `var/demos/markov-feature-check`. Test:
+`TestForEachStopsAfterAFailureWithConcurrencyOne`.
+
 ## Docs
 
 - `workflow-file.md`: the `failed_when` step field.
