@@ -22,6 +22,7 @@ These additions let it be written in Markov steps instead.
 | Loop item inside sub-workflows | A `for_each` sub-workflow now sees the current item under its `as` name, without re-passing it through `vars`. |
 | Autoescape off | pongo2 HTML-escaped every value (`"` became `&quot;`), corrupting JSON passed to scripts and shell commands. Markov never renders HTML. |
 | `script_exec` scalar args and env | `--var repeats=2` arrives as an integer, and `script_exec` rejected a non-string argument. Numbers and booleans are now passed as their text. |
+| `set_fact` renders maps and keeps native values | An exact expression in `set_fact` now keeps its native type, as in params. Maps and lists without `from` used to be stored unrendered; they are now rendered like params, so one fact can hold a whole record (`run: {id: "r{{ round }}-{{ test.id }}", ...}`). |
 | `vars/*.yaml` in directory workflows | Large data (test lists, arms, variants) can live in its own files, merged after `vars.yaml`; a variable may be defined once. |
 
 ## Behaviour changes to note
@@ -30,6 +31,16 @@ These additions let it be written in Markov steps instead.
   a native value, for example `{{ n + 1 }}` gives `3`, not `"3"`.
 - Output is no longer HTML-escaped. A workflow that relied on `&lt;` etc. would
   see raw characters; none of the examples did.
+
+## End-to-end check
+
+Breadboard's `var/benchmarks/strat-workflow` ran under the CLI against a
+stand-in dashboard:
+
+- native `k8s_job_wait` watched real cluster jobs;
+- a failed job was recorded by `ignore_errors`, and the loop went on;
+- `for_each_when` selected S1 and S2;
+- the rounds came from `repeats | seq`.
 
 ## Verification
 
@@ -42,7 +53,7 @@ These additions let it be written in Markov steps instead.
     (and the run failing without it), `ignore_errors` on `for_each` with a
     sub-workflow, the loop item visible in the sub-workflow,
     `for_each_when`, `for_each` over filter expressions, description not
-    changing the definition hash.
+    changing the definition hash, `set_fact` native values and rendered maps.
   - `pkg/parser`: `vars/` merge and duplicate rejection; `for_each_when`
     without `for_each` rejected; `description` and `ignore_errors` accepted.
   - `pkg/executor`: scalar `args`/`env` for `script_exec`.

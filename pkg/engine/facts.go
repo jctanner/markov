@@ -38,11 +38,16 @@ func (e *Engine) evalFact(v any, runCtx map[string]any) (any, error) {
 					}
 				}
 			}
-			rendered, err := e.tmpl.Render(val, runCtx)
+			// An exact {{ expr }} keeps its native value (a map, a list, a number); anything
+			// rendered to text is coerced as before.
+			rendered, err := e.renderTemplateValue(val, runCtx)
 			if err != nil {
 				return nil, fmt.Errorf("rendering template: %w", err)
 			}
-			return coerceString(rendered), nil
+			if text, ok := rendered.(string); ok {
+				return coerceString(text), nil
+			}
+			return rendered, nil
 		}
 		result, err := e.tmpl.EvalBool(val, runCtx)
 		if err != nil {
@@ -54,11 +59,25 @@ func (e *Engine) evalFact(v any, runCtx map[string]any) (any, error) {
 		if fromPath, ok := val["from"].(string); ok {
 			return e.lookupFact(fromPath, val, runCtx)
 		}
-		return val, nil
+		// Nested values are rendered like step params: templates are rendered, exact
+		// expressions keep native values, and other strings are kept as they are.
+		return e.renderTemplateValue(val, runCtx)
+
+	case []any:
+		return e.renderTemplateValue(val, runCtx)
 
 	default:
 		return v, nil
 	}
+}
+
+// renderTemplateValue renders a value with the same rules as step params.
+func (e *Engine) renderTemplateValue(v any, runCtx map[string]any) (any, error) {
+	rendered, err := e.tmpl.RenderMap(map[string]any{"v": v}, runCtx)
+	if err != nil {
+		return nil, err
+	}
+	return rendered["v"], nil
 }
 
 func (e *Engine) lookupFact(fromPath string, spec map[string]any, runCtx map[string]any) (any, error) {

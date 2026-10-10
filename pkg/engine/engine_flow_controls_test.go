@@ -177,3 +177,33 @@ func TestDescriptionDoesNotChangeDefinitionHash(t *testing.T) {
 		t.Fatal("ignore_errors did not change the definition hash")
 	}
 }
+
+func TestSetFactKeepsNativeValuesAndRendersMaps(t *testing.T) {
+	eng, _ := newTestEngine(t, &parser.WorkflowFile{Entrypoint: "main"}, nil)
+	runCtx := map[string]any{
+		"tiers": map[string]any{"smoke": map[string]any{"repeats": 3}},
+		"tier":  "smoke", "round": 2, "test": map[string]any{"id": "S1"},
+	}
+	facts, err := eng.evalFacts(map[string]any{
+		"tier_def": "{{ tiers[tier] }}",
+		"names":    "{{ 'a, b' | csv }}",
+		"run": map[string]any{
+			"id":     "r{{ round }}-{{ test.id }}",
+			"repeat": "{{ round }}",
+			"note":   "plain text stays text",
+		},
+		"count": "{{ round + 1 }}",
+	}, runCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{
+		"tier_def": map[string]any{"repeats": 3},
+		"names":    []any{"a", "b"},
+		"run":      map[string]any{"id": "r2-S1", "repeat": 2, "note": "plain text stays text"},
+		"count":    3,
+	}
+	if !reflect.DeepEqual(facts, want) {
+		t.Fatalf("facts = %#v", facts)
+	}
+}
