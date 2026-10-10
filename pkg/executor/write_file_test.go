@@ -52,3 +52,17 @@ func TestWriteFileAppendAndErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteFileSetgidDirMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "shared", "x.txt")
+	if _, err := NewWriteFile().Execute(context.Background(), map[string]any{
+		"path": path, "content": "x", "dir_mode": "2775",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	info, _ := os.Stat(filepath.Join(dir, "shared"))
+	if info.Mode()&os.ModeSetgid == 0 || info.Mode().Perm() != 0o775 {
+		t.Fatalf("dir mode = %v, want setgid and 0775", info.Mode())
+	}
+}

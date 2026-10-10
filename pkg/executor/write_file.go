@@ -96,7 +96,18 @@ func modeParam(params map[string]any, name string, def os.FileMode) (os.FileMode
 	if err != nil || mode > 0o7777 {
 		return 0, fmt.Errorf("write_file: %s must be an octal mode such as \"0644\", got %q", name, text)
 	}
-	return os.FileMode(mode), nil
+	// Go keeps the special bits outside the permission bits: map 04000/02000/01000 to them.
+	fm := os.FileMode(mode & 0o777)
+	if mode&0o4000 != 0 {
+		fm |= os.ModeSetuid
+	}
+	if mode&0o2000 != 0 {
+		fm |= os.ModeSetgid
+	}
+	if mode&0o1000 != 0 {
+		fm |= os.ModeSticky
+	}
+	return fm, nil
 }
 
 // mkdirAllMode creates missing directories with exactly mode (not reduced by the umask);
