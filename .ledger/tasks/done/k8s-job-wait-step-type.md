@@ -93,3 +93,13 @@ This replaces the current 20-line `shell_exec` curl polling loop with a single d
 
 - `GOCACHE=/tmp/go-build go test ./pkg/executor ./pkg/parser ./cmd/markov`
 - `git diff --check`
+
+## Follow-up (2026-10-10): job_created on watch
+
+markovd shows a step's live Job log once it has the step's `job_name`, which
+it takes from the `job_created` callback. Only `k8s_job` emitted that, so a
+`k8s_job_wait` on a dashboard job showed no log until the Job finished.
+`k8s_job_wait` now emits `job_created`, with the watched Job's name and
+namespace (the step's own, or the workflow's), when its watch starts
+(`ea133d5`). Test: `TestCallbackJobCreatedForK8sJobWait`. Documented in
+`step-types.md` and `callbacks.md`.
