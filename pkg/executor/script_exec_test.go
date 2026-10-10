@@ -117,3 +117,25 @@ func TestScriptExecAcceptsScalarArgsAndEnv(t *testing.T) {
 		t.Fatal("a map argument should be rejected")
 	}
 }
+
+func TestScriptExecStdin(t *testing.T) {
+	big := strings.Repeat("x", 300*1024) // larger than one argument may be
+	result, err := NewScriptExec().Execute(context.Background(), map[string]any{
+		"interpreter": "sh", "content": "wc -c", "stdin": big,
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got := strings.TrimSpace(result.Output["stdout"].(string)); got != "307200" {
+		t.Fatalf("stdin bytes = %s", got)
+	}
+	result, err = NewScriptExec().Execute(context.Background(), map[string]any{
+		"interpreter": "sh", "content": "cat", "stdin": []any{map[string]any{"a": 1}},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got := result.Output["stdout"]; got != `[{"a":1}]` {
+		t.Fatalf("JSON stdin = %q", got)
+	}
+}

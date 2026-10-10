@@ -207,3 +207,39 @@ func TestSetFactKeepsNativeValuesAndRendersMaps(t *testing.T) {
 		t.Fatalf("facts = %#v", facts)
 	}
 }
+
+func TestFailedWhen(t *testing.T) {
+	cases := []struct {
+		name       string
+		params     map[string]any
+		failedWhen string
+		ignore     bool
+		wantErr    bool
+		wantFailed any
+	}{
+		{"success turned into failure", map[string]any{"msg": "bad"}, "result.msg == 'bad'", false, true, nil},
+		{"executor error turned into success", map[string]any{"fail": true}, "result.status != 'failed'", false, false, nil},
+		{"register name is bound too", map[string]any{"msg": "ok"}, "out.msg != 'ok'", false, false, nil},
+		{"error text is visible", map[string]any{"fail": true}, "'job failed' in result.error", false, true, nil},
+		{"with ignore_errors", map[string]any{"msg": "bad"}, "result.msg == 'bad'", true, false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := &recordExec{}
+			wf := &parser.WorkflowFile{Entrypoint: "main", Workflows: []parser.Workflow{{
+				Name: "main",
+				Steps: []parser.Step{{Name: "s", Type: "shell_exec", Params: tc.params,
+					FailedWhen: tc.failedWhen, IgnoreErrors: tc.ignore, Register: "out"}},
+			}}}
+			runCtx, err := runMain(t, wf, rec)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
+			}
+			if !tc.wantErr {
+				if got := runCtx["out"].(map[string]any)["failed"]; got != tc.wantFailed {
+					t.Fatalf("failed = %v, want %v", got, tc.wantFailed)
+				}
+			}
+		})
+	}
+}

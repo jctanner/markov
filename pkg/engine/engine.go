@@ -969,6 +969,9 @@ func (e *Engine) executeStepCore(ctx context.Context, runID string, workflowName
 	if result != nil {
 		output = result.Output
 	}
+	if step.FailedWhen != "" {
+		err = e.evalFailedWhen(step, output, err, runCtx)
+	}
 	if err != nil {
 		if !step.IgnoreErrors {
 			return e.failStep(ctx, runID, workflowName, stateStepName, base, now, err)
@@ -1440,6 +1443,38 @@ func asList(value any) ([]any, bool) {
 		list[i] = v.Index(i).Interface()
 	}
 	return list, true
+}
+
+// evalFailedWhen decides a step's failure from its failed_when expression. The expression sees
+// the run context plus the step's output as `result` (and under the register name), with an
+// executor error, if any, in result.error.
+func (e *Engine) evalFailedWhen(step parser.Step, output map[string]any, execErr error, runCtx map[string]any) error {
+	result := make(map[string]any, len(output)+1)
+	for k, v := range output {
+		result[k] = v
+	}
+	if execErr != nil {
+		result["error"] = execErr.Error()
+	}
+	evalCtx := make(map[string]any, len(runCtx)+2)
+	for k, v := range runCtx {
+		evalCtx[k] = v
+	}
+	evalCtx["result"] = result
+	if step.Register != "" {
+		evalCtx[step.Register] = result
+	}
+	failed, err := e.tmpl.EvalBool(step.FailedWhen, evalCtx)
+	if err != nil {
+		return fmt.Errorf("evaluating failed_when: %w", err)
+	}
+	if failed {
+		if execErr != nil {
+			return fmt.Errorf("failed_when %q is true: %w", step.FailedWhen, execErr)
+		}
+		return fmt.Errorf("failed_when %q is true", step.FailedWhen)
+	}
+	return nil
 }
 
 // ignoredFailure marks a step's output as failed for a step with ignore_errors, keeping

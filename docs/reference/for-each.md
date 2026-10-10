@@ -21,7 +21,7 @@ The `for_each` expression is resolved in the following order:
 1. **Dot-path context lookup** -- the expression is split on `.` and walked through the context map (e.g., `"items"` looks up `ctx["items"]`, `"fetch.results"` looks up `ctx["fetch"]["results"]`).
 2. **Type coercion** -- `[]any` is used directly; `[]string` is converted to `[]any`.
 3. **Expression** -- otherwise the expression is evaluated as a template expression and its native value is used if it is a list, so filters work: `repeats | seq`, `only_tests | csv`, `variants | csv | default:own`.
-4. **Template fallback** -- if the lookup returns nil, the expression is rendered as a Go template (`{{ expr }}`) and the result is JSON-parsed into a list.
+4. **Text fallback** -- otherwise the expression is rendered as text (`{{ expr }}`) and the text is JSON-parsed into a list, so an expression producing JSON text also works.
 5. **Error** -- if none of the above produce a list, the step fails with `for_each expression "..." did not resolve to a list`.
 
 ```yaml
@@ -33,9 +33,13 @@ as: item
 for_each: fetch_step.results
 as: result
 
-# Template expression producing JSON
-for_each: "range .items | toJson"
-as: item
+# Expression with filters (evaluated natively)
+for_each: "repeats | seq"
+as: round
+
+# Nested results flattened into one list
+for_each: "rounds_done | pluck:'tests_done' | flatten"
+as: test_result
 ```
 
 ## for_each with workflow

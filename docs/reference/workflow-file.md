@@ -203,6 +203,7 @@ A step is the unit of execution within a workflow. Each step either runs a primi
 | Facts | `facts` | map[string]any | no | Additional facts to inject into the rule evaluation context for `gate` steps. Use this to pass step results or computed values into rules. |
 | Description | `description` | string | no | Free text for readers and tools (long-form notes on what the step is for). It does not change what the step does, and editing it does not count as a step change on resume. |
 | IgnoreErrors | `ignore_errors` | bool | no | When the step fails, record the failure and carry on. The registered output keeps whatever the step produced, plus `failed: true` and `error`. On a sub-workflow, the registered context gets the same two keys; on `for_each`, failed items are marked that way and the loop runs every item. Errors in the workflow itself, such as a template that doesn't parse, still fail the step. |
+| FailedWhen | `failed_when` | string | no | Expression that alone decides whether the step failed, evaluated after it runs. It sees the step's output as `result` and under the `register` name; an executor error is in `result.error`. True fails the step (and `ignore_errors` still applies); false makes it succeed even if the executor reported an error. Not allowed on sub-workflow steps. |
 
 ```yaml
 steps:

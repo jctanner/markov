@@ -70,6 +70,9 @@ type Step struct {
 	Facts       map[string]any      `yaml:"facts"`
 	// IgnoreErrors records a failure in the step's output (failed: true, error) and carries on.
 	IgnoreErrors bool `yaml:"ignore_errors"`
+	// FailedWhen, when set, alone decides whether the step failed. It sees the step's output as
+	// `result` (and under the register name); an executor error is in result.error.
+	FailedWhen string `yaml:"failed_when"`
 }
 
 type Artifact struct {

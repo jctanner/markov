@@ -92,6 +92,7 @@ Provide exactly one script source:
 | `path` | string | one of `content`/`path` | Script path relative to the workflow `scripts/` directory. |
 | `args` | list | no | Arguments passed to the script after its path. Strings, numbers and booleans; numbers and booleans are passed as their text (`3`, `true`). |
 | `env` | map | no | Environment variables added to or overriding the runner environment. Values as for `args`. |
+| `stdin` | string, map or list | no | Standard input for the script. A map or list (from an exact expression) is sent as JSON. Use it for large values: a single argument is limited to about 128 KB on Linux, stdin is not. |
 
 ### Output Variables
 

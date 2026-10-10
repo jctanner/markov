@@ -3,6 +3,7 @@ package template
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,6 +20,8 @@ func init() {
 	pongo2.RegisterFilter(captureFilter, filterCapture)
 	pongo2.RegisterFilter("csv", filterCSV)
 	pongo2.RegisterFilter("seq", filterSeq)
+	pongo2.RegisterFilter("flatten", filterFlatten)
+	pongo2.RegisterFilter("pluck", filterPluck)
 	pongo2.RegisterFilter("fromjson", filterFromJSON)
 	pongo2.RegisterFilter("from_json", filterFromJSON)
 	pongo2.RegisterFilter("trim", filterTrim)
@@ -83,6 +86,58 @@ func filterSeq(in *pongo2.Value, param *pongo2.Value) (*pongo2.Value, *pongo2.Er
 	out := make([]any, 0, max(n, 0))
 	for i := 1; i <= n; i++ {
 		out = append(out, i)
+	}
+	return pongo2.AsValue(out), nil
+}
+
+// filterFlatten flattens nested lists into one list: [[1, 2], [3]] gives [1, 2, 3]. With a
+// number it flattens that many levels only.
+func filterFlatten(in *pongo2.Value, param *pongo2.Value) (*pongo2.Value, *pongo2.Error) {
+	depth := -1
+	if param != nil && !param.IsNil() && param.String() != "" {
+		depth = param.Integer()
+	}
+	return pongo2.AsValue(flatten(in.Interface(), depth)), nil
+}
+
+func flatten(value any, depth int) []any {
+	out := []any{}
+	v := reflect.ValueOf(value)
+	if !v.IsValid() || (v.Kind() != reflect.Slice && v.Kind() != reflect.Array) {
+		return out
+	}
+	for i := 0; i < v.Len(); i++ {
+		item := v.Index(i).Interface()
+		iv := reflect.ValueOf(item)
+		if depth != 0 && iv.IsValid() && (iv.Kind() == reflect.Slice || iv.Kind() == reflect.Array) {
+			out = append(out, flatten(item, depth-1)...)
+		} else {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+// filterPluck takes one field from each item of a list: `{{ runs | pluck:"eval.stdout" }}`.
+// The field may be a dotted path; items without it give nil.
+func filterPluck(in *pongo2.Value, param *pongo2.Value) (*pongo2.Value, *pongo2.Error) {
+	path := strings.Split(param.String(), ".")
+	out := []any{}
+	v := reflect.ValueOf(in.Interface())
+	if !v.IsValid() || (v.Kind() != reflect.Slice && v.Kind() != reflect.Array) {
+		return nil, &pongo2.Error{Sender: "filter:pluck", OrigError: fmt.Errorf("pluck needs a list, got %T", in.Interface())}
+	}
+	for i := 0; i < v.Len(); i++ {
+		var current any = v.Index(i).Interface()
+		for _, key := range path {
+			m, ok := current.(map[string]any)
+			if !ok {
+				current = nil
+				break
+			}
+			current = m[key]
+		}
+		out = append(out, current)
 	}
 	return pongo2.AsValue(out), nil
 }

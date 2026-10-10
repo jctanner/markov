@@ -340,6 +340,9 @@ func validateSteps(wf *WorkflowFile, workflowName, section string, steps []Step,
 			return fmt.Errorf("workflow %q, step %q: must have type or workflow", workflowName, s.Name)
 		}
 
+		if s.FailedWhen != "" && s.Workflow != "" {
+			return fmt.Errorf("workflow %q, step %q: failed_when applies to step types, not sub-workflows", workflowName, s.Name)
+		}
 		if s.ForEachWhen != "" && s.ForEach == "" {
 			return fmt.Errorf("workflow %q, step %q: for_each_when requires for_each", workflowName, s.Name)
 		}

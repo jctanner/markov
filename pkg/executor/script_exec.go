@@ -3,6 +3,7 @@ package executor
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -80,6 +81,13 @@ func (e *ScriptExec) Execute(ctx context.Context, params map[string]any) (*Resul
 	commandArgs := append([]string{scriptPath}, args...)
 	cmd := exec.CommandContext(ctx, interpreter, commandArgs...)
 	cmd.Env = env
+	if raw, ok := params["stdin"]; ok && raw != nil {
+		input, err := stdinText(raw)
+		if err != nil {
+			return nil, err
+		}
+		cmd.Stdin = strings.NewReader(input)
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -178,6 +186,19 @@ func scriptEnv(params map[string]any) ([]string, error) {
 		}
 	}
 	return env, nil
+}
+
+// stdinText is the script's standard input: a string as it is, anything else (a map or list
+// from an exact expression) as JSON. Unlike args, stdin has no size limit.
+func stdinText(raw any) (string, error) {
+	if s, ok := raw.(string); ok {
+		return s, nil
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return "", fmt.Errorf("script_exec: stdin: %w", err)
+	}
+	return string(data), nil
 }
 
 // scalarString accepts a string, number or boolean. Templated values and --var overrides can

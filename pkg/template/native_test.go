@@ -87,3 +87,49 @@ func TestEval(t *testing.T) {
 		t.Fatalf("undefined: got %#v", got)
 	}
 }
+
+func TestChainedSubscripts(t *testing.T) {
+	ctx := map[string]any{
+		"tiers": map[string]any{"smoke": map[string]any{"tests": []any{"S1", "S2"}}},
+		"tier":  "smoke",
+		"grid":  []any{[]any{1, 2}, []any{3, 4}},
+	}
+	cases := map[string]string{
+		`{{ tiers[tier].tests.1 }}`:     "S2",
+		`{{ tiers[tier]["tests"][0] }}`: "S1",
+		`{{ grid[1][0] }}`:              "3",
+	}
+	for tmpl, want := range cases {
+		got, err := New().Render(tmpl, ctx)
+		if err != nil || got != want {
+			t.Fatalf("%s: got %q, %v; want %q", tmpl, got, err, want)
+		}
+	}
+}
+
+func TestFlattenAndPluck(t *testing.T) {
+	rounds := []any{
+		map[string]any{"tests_done": []any{
+			map[string]any{"variants_done": []any{map[string]any{"eval": map[string]any{"stdout": "a"}}}},
+			map[string]any{"variants_done": []any{map[string]any{"eval": map[string]any{"stdout": "b"}}}},
+		}},
+		map[string]any{"tests_done": []map[string]any{
+			{"variants_done": []any{map[string]any{"eval": map[string]any{"stdout": "c"}}}},
+		}},
+	}
+	ctx := map[string]any{"rounds": rounds, "nested": []any{1, []any{2, []any{3}}}}
+	cases := map[string]any{
+		`{{ rounds | pluck:"tests_done" | flatten | pluck:"variants_done" | flatten | pluck:"eval.stdout" }}`: []any{"a", "b", "c"},
+		`{{ nested | flatten }}`:   []any{1, 2, 3},
+		`{{ nested | flatten:1 }}`: []any{1, 2, []any{3}},
+	}
+	for tmpl, want := range cases {
+		got, err := New().RenderMap(map[string]any{"v": tmpl}, ctx)
+		if err != nil {
+			t.Fatalf("%s: %v", tmpl, err)
+		}
+		if !reflect.DeepEqual(got["v"], want) {
+			t.Fatalf("%s: got %#v, want %#v", tmpl, got["v"], want)
+		}
+	}
+}

@@ -22,7 +22,7 @@ also_works: "{{ items[0] }}"
 | `{{ variable }}` | Substitute a simple value from context |
 | `{{ variable.field }}` | Access a nested map field |
 | `{{ array.0 }}` or `{{ array[0] }}` | Access an array element by index |
-| `{{ map[key] }}` | Look up a map entry by a variable key (no further `.field` after the brackets; bind it with `set_fact` first) |
+| `{{ map[key] }}` | Look up a map entry by a variable key; `.field`, `.0` and further `[...]` may follow, as in `{{ tiers[tier].tests }}` |
 
 Values are inserted as they are. Markov turns off Pongo2's HTML autoescaping, because templates
 render shell commands, script arguments, JSON bodies and paths, where `&quot;` would corrupt the
@@ -73,6 +73,23 @@ spaces and empty items.
 ```yaml
 for_each: "only_tests | csv"                 # "S1, S2" -> ["S1", "S2"]
 for_each: "variants | csv | default:own"     # "" -> own
+```
+
+### `flatten`
+
+Flattens nested lists into one list; `flatten:1` flattens one level only.
+
+```yaml
+"{{ [[1, 2], [3]] | flatten }}"     # [1, 2, 3]
+```
+
+### `pluck`
+
+Takes one field, which may be a dotted path, from each item of a list. Items without it give
+`nil`. With `flatten` it collects results from nested `for_each` registers:
+
+```yaml
+stdin: "{{ rounds_done | pluck:'tests_done' | flatten | pluck:'variants_done' | flatten | pluck:'eval.stdout' | join:'\n' }}"
 ```
 
 ### `seq`
@@ -297,3 +314,12 @@ Coercion order matters: integer parsing is attempted before float parsing. JSON 
 
 Step `when` and `assert.that` support durable `jev.noul`, `jev.choice`, and `jev.score` calls against named definitions. These helpers are not general template filters. See [Jev decisions](jev.md).
 {% endraw %}
+
+## Markov's pongo2
+
+Markov builds with a patched copy of pongo2 v6.0.0 in `third_party/pongo2` (see its
+`MARKOV_PATCHES.md`). Upstream stops parsing a variable after a `[subscript]`, so
+`tiers[tier].tests` failed; the patch lets subscripts chain like dotted fields. pongo2 follows
+Django's template language, not Jinja2's: there is no inline `a if cond else b` (use
+`a | default:b` for "a, or b when a is empty", or `{% if %}...{% endif %}` in a string), and
+`a or b` returns a boolean, not the first truthy value.
