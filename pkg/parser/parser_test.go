@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -666,5 +667,38 @@ workflows:
 `))
 	if err == nil || !strings.Contains(err.Error(), "for_each_when requires for_each") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestParseValidatesWorkflowNames(t *testing.T) {
+	base := `
+entrypoint: main
+workflows:
+  - name: main
+    steps:
+      - name: submit
+        workflow: %s
+        workflow_names: %s
+  - name: submit-bash
+    steps:
+      - name: s
+        type: shell_exec
+        params: {command: "true"}
+`
+	cases := []struct {
+		workflow, names, wantErr string
+	}{
+		{`"submit-{{ arm }}"`, `[submit-bash]`, ""},
+		{`"submit-{{ arm }}"`, `[submit-bsh]`, `workflow_names lists unknown workflow "submit-bsh"`},
+		{`submit-bash`, `[submit-bash]`, "workflow_names needs a templated workflow"},
+	}
+	for _, tc := range cases {
+		_, err := Parse([]byte(fmt.Sprintf(base, tc.workflow, tc.names)))
+		if tc.wantErr == "" && err != nil {
+			t.Fatalf("%s %s: %v", tc.workflow, tc.names, err)
+		}
+		if tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)) {
+			t.Fatalf("%s %s: err = %v, want %q", tc.workflow, tc.names, err, tc.wantErr)
+		}
 	}
 }

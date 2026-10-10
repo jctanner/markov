@@ -48,3 +48,19 @@ finished steps would be ignored, and its work redone or mixed in. So:
   - `variables-and-context.md`: built-in variables, and a caution that
     all-digit `--var` values become numbers.
 - The schema lists `write_file` and `script_exec` `stdin`.
+
+## Follow-up: workflow_names
+
+A templated name can't be drawn or checked until it runs.
+`workflow_names: [submit-workflow, submit-bash]` lists the workflows it may
+resolve to:
+
+- each must exist when the definition loads;
+- a run that resolves to another name fails the step, naming the expected
+  set;
+- the list is only allowed with a templated `workflow`;
+- markovd's diagram draws the listed workflows as the step's alternatives.
+
+Tests: `TestWorkflowNamesLimitTemplatedTargets` and
+`TestParseValidatesWorkflowNames`. Documented in `workflow-file.md` and in
+the common fields of `step-types.md`.

@@ -10,6 +10,7 @@ import (
 	"log"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -1459,6 +1460,10 @@ func (e *Engine) resolveSubWorkflow(step parser.Step, ctx map[string]any) (*pars
 			return nil, fmt.Errorf("rendering workflow name %q: %w", step.Workflow, err)
 		}
 		name = strings.TrimSpace(rendered)
+		if len(step.WorkflowNames) > 0 && !slices.Contains(step.WorkflowNames, name) {
+			return nil, fmt.Errorf("workflow %q resolved to %q; expected one of %s (workflow_names)",
+				step.Workflow, name, strings.Join(step.WorkflowNames, ", "))
+		}
 	}
 	wf := e.file.GetWorkflow(name)
 	if wf == nil {

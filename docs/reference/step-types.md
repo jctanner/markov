@@ -18,6 +18,7 @@ All step types support these common fields:
 | `as` | string | Variable name for the current item (required when `for_each` is set) |
 | `concurrency` | int | Max parallel iterations for `for_each` (defaults to global `forks`) |
 | `workflow` | string | Name of a sub-workflow to invoke instead of running a type. May be a template, resolved when the step runs (per item under `for_each`): `submit-{{ test.arm }}` |
+| `workflow_names` | string[] | For a templated `workflow`: the workflows it may resolve to. Checked when the definition loads, enforced at run time, and used by diagrams. |
 
 ---
 

@@ -370,3 +370,17 @@ func TestMarkovRunIDVar(t *testing.T) {
 		t.Fatalf("calls: %#v", got)
 	}
 }
+
+func TestWorkflowNamesLimitTemplatedTargets(t *testing.T) {
+	wf := templatedWorkflowFile()
+	wf.Vars["go"] = true
+	wf.Workflows[0].Steps[0].WorkflowNames = []string{"submit-workflow", "submit-bash"}
+	if _, err := runMain(t, wf, &recordExec{}); err != nil {
+		t.Fatalf("listed targets: %v", err)
+	}
+	wf.Workflows[0].Steps[0].WorkflowNames = []string{"submit-workflow"}
+	_, err := runMain(t, wf, &recordExec{})
+	if err == nil || !strings.Contains(err.Error(), `resolved to "submit-bash"; expected one of submit-workflow (workflow_names)`) {
+		t.Fatalf("err = %v", err)
+	}
+}

@@ -58,16 +58,19 @@ type Step struct {
 	ForEachSort string         `yaml:"for_each_sort"`
 	// ForEachWhen is evaluated per item, with the item bound to `as`; items where it is false
 	// are skipped. `when` is evaluated once, before the loop.
-	ForEachWhen string              `yaml:"for_each_when"`
-	As          string              `yaml:"as"`
-	Concurrency int                 `yaml:"concurrency"`
-	Workflow    string              `yaml:"workflow"`
-	Vars        map[string]any      `yaml:"vars"`
-	Artifacts   map[string]Artifact `yaml:"artifacts"`
-	That        []string            `yaml:"that"`
-	Msg         string              `yaml:"msg"`
-	Rules       []string            `yaml:"rules"`
-	Facts       map[string]any      `yaml:"facts"`
+	ForEachWhen string `yaml:"for_each_when"`
+	As          string `yaml:"as"`
+	Concurrency int    `yaml:"concurrency"`
+	Workflow    string `yaml:"workflow"`
+	// WorkflowNames lists the workflows a templated Workflow may resolve to: each must exist,
+	// and a run that resolves to another name fails.
+	WorkflowNames []string            `yaml:"workflow_names"`
+	Vars          map[string]any      `yaml:"vars"`
+	Artifacts     map[string]Artifact `yaml:"artifacts"`
+	That          []string            `yaml:"that"`
+	Msg           string              `yaml:"msg"`
+	Rules         []string            `yaml:"rules"`
+	Facts         map[string]any      `yaml:"facts"`
 	// IgnoreErrors records a failure in the step's output (failed: true, error) and carries on.
 	IgnoreErrors bool `yaml:"ignore_errors"`
 	// FailedWhen, when set, alone decides whether the step failed. It sees the step's output as

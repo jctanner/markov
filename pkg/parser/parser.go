@@ -337,6 +337,16 @@ func validateSteps(wf *WorkflowFile, workflowName, section string, steps []Step,
 		}
 		stepNames[s.Name] = true
 
+		if len(s.WorkflowNames) > 0 {
+			if !IsTemplated(s.Workflow) {
+				return fmt.Errorf("workflow %q, step %q: workflow_names needs a templated workflow (one with {{ }}) to choose between them", workflowName, s.Name)
+			}
+			for _, name := range s.WorkflowNames {
+				if !hasWorkflow(wf, name) {
+					return fmt.Errorf("workflow %q, step %q: workflow_names lists unknown workflow %q", workflowName, s.Name, name)
+				}
+			}
+		}
 		if s.Workflow != "" {
 			// A templated name is resolved when the step runs.
 			if !IsTemplated(s.Workflow) && !hasWorkflow(wf, s.Workflow) {
