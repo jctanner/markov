@@ -19,6 +19,7 @@
 
 ## Completed Tasks
 
+- [Templated sub-workflow names, write_file, markov_run_id](tasks/done/templated-workflow-and-write-file.md)
 - [failed_when, flatten/pluck, script stdin, chained subscripts](tasks/done/failed-when-flatten-stdin-subscripts.md)
 - [Language additions for data-driven benchmark workflows](tasks/done/workflow-language-flow-controls.md)
 - [First-class Jev support](tasks/done/jev-support.md)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 
@@ -291,5 +292,81 @@ func TestResumeKeepsWholeNumbersAsInts(t *testing.T) {
 	}
 	if got := rec.messages(); !reflect.DeepEqual(got, []any{"2/3"}) {
 		t.Fatalf("after resume: %#v (numbers must not come back as floats)", got)
+	}
+}
+
+func templatedWorkflowFile() *parser.WorkflowFile {
+	return &parser.WorkflowFile{
+		Entrypoint: "main",
+		Vars: map[string]any{
+			"tests": []any{map[string]any{"id": "S1", "arm": "workflow"}, map[string]any{"id": "S2", "arm": "bash"}},
+			"go":    false,
+		},
+		Workflows: []parser.Workflow{
+			{Name: "main", Steps: []parser.Step{
+				{Name: "each", ForEach: "tests", ForEachKey: "id", As: "test", Concurrency: 1, Workflow: "submit-{{ test.arm }}"},
+				{Name: "after", Type: "assert", That: []string{"go"}},
+			}},
+			{Name: "submit-workflow", Steps: []parser.Step{{Name: "s", Type: "shell_exec", Params: map[string]any{"msg": "wf {{ test.id }}"}}}},
+			{Name: "submit-bash", Steps: []parser.Step{{Name: "s", Type: "shell_exec", Params: map[string]any{"msg": "bash {{ test.id }}"}}}},
+		},
+	}
+}
+
+func TestTemplatedSubWorkflowPerItem(t *testing.T) {
+	rec := &recordExec{}
+	wf := templatedWorkflowFile()
+	wf.Vars["go"] = true
+	if _, err := runMain(t, wf, rec); err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+	if got := rec.messages(); !reflect.DeepEqual(got, []any{"wf S1", "bash S2"}) {
+		t.Fatalf("calls: %#v", got)
+	}
+}
+
+func TestTemplatedSubWorkflowUnknownName(t *testing.T) {
+	wf := templatedWorkflowFile()
+	wf.Vars["tests"] = []any{map[string]any{"id": "S9", "arm": "nope"}}
+	_, err := runMain(t, wf, &recordExec{})
+	if err == nil || !strings.Contains(err.Error(), `sub-workflow "submit-nope" (from "submit-{{ test.arm }}") not found`) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestResumeRefusesSubRunInADifferentWorkflow(t *testing.T) {
+	rec := &recordExec{}
+	wf := templatedWorkflowFile()
+	eng, _ := newTestEngine(t, wf, map[string]executor.Executor{"shell_exec": rec})
+	runID, err := eng.Run(context.Background(), "main", nil)
+	if err == nil {
+		t.Fatal("first attempt should fail at the assert")
+	}
+	// The same item now resolves to the other workflow.
+	err = eng.ResumeWithVars(context.Background(), runID, map[string]any{
+		"go":    true,
+		"tests": []any{map[string]any{"id": "S1", "arm": "bash"}, map[string]any{"id": "S2", "arm": "bash"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), `ran workflow "submit-workflow", but "submit-{{ test.arm }}" now resolves to "submit-bash"`) {
+		t.Fatalf("err = %v", err)
+	}
+	// Resolving the same way resumes normally.
+	if err := eng.ResumeWithVars(context.Background(), runID, map[string]any{"go": true}); err != nil {
+		t.Fatalf("resume with the same resolution: %v", err)
+	}
+}
+
+func TestMarkovRunIDVar(t *testing.T) {
+	rec := &recordExec{}
+	wf := &parser.WorkflowFile{Entrypoint: "main", Workflows: []parser.Workflow{{Name: "main", Steps: []parser.Step{
+		{Name: "s", Type: "shell_exec", Params: map[string]any{"msg": "{{ markov_run_id }}"}},
+	}}}}
+	eng, _ := newTestEngine(t, wf, map[string]executor.Executor{"shell_exec": rec})
+	eng.RunID = "run-123"
+	if _, err := eng.Run(context.Background(), "main", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := rec.messages(); !reflect.DeepEqual(got, []any{"run-123"}) {
+		t.Fatalf("calls: %#v", got)
 	}
 }

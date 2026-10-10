@@ -1,7 +1,7 @@
 {% raw %}
 # Built-in Step Types
 
-Markov ships with fourteen primitive step types. Every step in a workflow must resolve to one of these primitives, either directly or through a [custom step type](custom-step-types.md).
+Markov ships with fifteen primitive step types. Every step in a workflow must resolve to one of these primitives, either directly or through a [custom step type](custom-step-types.md).
 
 All step types support these common fields:
 
@@ -17,7 +17,7 @@ All step types support these common fields:
 | `for_each_sort` | string | Field on each item to sort by before iterating |
 | `as` | string | Variable name for the current item (required when `for_each` is set) |
 | `concurrency` | int | Max parallel iterations for `for_each` (defaults to global `forks`) |
-| `workflow` | string | Name of a sub-workflow to invoke instead of running a type |
+| `workflow` | string | Name of a sub-workflow to invoke instead of running a type. May be a template, resolved when the step runs (per item under `for_each`): `submit-{{ test.arm }}` |
 
 ---
 
@@ -137,6 +137,46 @@ my-workflow/
     interpreter: python3
     path: reconcile.py
     args: ["--dry-run"]
+```
+
+---
+
+## write_file
+
+Writes content to a file on the Markov runner, creating missing parent directories. Use it to
+save results to a mounted volume without an inline script: the content is a rendered template or a
+value, with no size limit and no shell quoting.
+
+### Parameters
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `path` | string | yes | File to write. |
+| `content` | string, map or list | yes | Text to write. A map or list (from an exact expression) is written as indented JSON. |
+| `mode` | string | no | Octal file mode, default `"0644"`. Quote it, so YAML doesn't read it as a decimal number. It is applied exactly, regardless of the umask. |
+| `dir_mode` | string | no | Octal mode for directories it creates, default `"0755"`. Existing directories are left alone. A new directory keeps its parent's setgid bit, so it stays in a shared volume's group. |
+| `append` | bool | no | Append instead of replacing the file. |
+
+### Output Variables
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `path` | string | The file written. |
+| `bytes` | int | Bytes written. |
+
+### Example
+
+The runner usually runs as root, while other services read and clean the volume as another user.
+Group-writable modes on a setgid volume let them remove what the runner wrote:
+
+```yaml
+- name: save_result
+  type: write_file
+  params:
+    path: "/app/artifacts/benchmarks/{{ markov_run_id }}/{{ run.id }}.json"
+    content: "{{ eval.stdout | from_json }}"
+    mode: "0664"
+    dir_mode: "2775"
 ```
 
 ---

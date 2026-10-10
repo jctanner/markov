@@ -92,7 +92,12 @@ func stepTypes() []StepType {
 		StepType{Name: "shell_exec", Inputs: "params", Summary: "Run a shell command.", Params: []Param{req("command", "Shell command to execute")}},
 		StepType{Name: "script_exec", Inputs: "params", Summary: "Run an inline script or a script from scripts/.", Params: []Param{
 			req("interpreter", "Interpreter executable, such as python3 or bash"), p("content", "Inline script body (or path)"), p("path", "Script path relative to the workflow scripts/ directory (or content)"),
-			p("args", "Arguments passed to the script"), p("env", "Environment variables"),
+			p("args", "Arguments passed to the script"), p("env", "Environment variables"), p("stdin", "Standard input; a map or list is sent as JSON"),
+		}},
+		StepType{Name: "write_file", Inputs: "params", Summary: "Write content to a file on the runner, creating parent directories.", Params: []Param{
+			req("path", "File to write"), req("content", "Text, or a map or list written as indented JSON"),
+			p("mode", "Octal file mode as a string, default \"0644\""), p("dir_mode", "Octal mode for created directories, default \"0755\""),
+			p("append", "Append instead of replacing"),
 		}},
 		StepType{Name: "claude", Inputs: "params", Summary: "Run Claude Code with a prompt or skill, streaming its output, with limits enforced by Markov.", Params: []Param{
 			p("prompt", "The prompt text (or skill)"), p("skill", "Skill or command name (or prompt)"), p("args", "Arguments appended after skill"), p("chdir", "Directory to run in"),

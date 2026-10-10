@@ -184,7 +184,7 @@ A step is the unit of execution within a workflow. Each step either runs a primi
 |-------|----------|------|----------|-------------|
 | Name | `name` | string | yes | Unique name within its workflow. Used for logging, state tracking, and variable scoping. |
 | Type | `type` | string | conditional | Step type name. Must be a known primitive or a defined `step_type`. Required unless `workflow` is set. |
-| Workflow | `workflow` | string | conditional | Name of a sub-workflow to invoke. Required unless `type` is set. Cannot be combined with `type`. |
+| Workflow | `workflow` | string | conditional | Name of a sub-workflow to invoke. Required unless `type` is set. Cannot be combined with `type`. It may be a template, such as `submit-{{ test.arm }}`, resolved when the step runs (per item under `for_each`); validation then can't check the name, and an unknown result fails the step. A resume refuses a sub-run whose name now resolves to a different workflow than it ran, because step state is kept per workflow. `type` can't be templated. |
 | When | `when` | string | no | Pongo2 boolean expression. If it evaluates to false, the step is skipped. Has access to all in-scope variables. |
 | Register | `register` | string | no | Variable name to store the step's output. The result is available to subsequent steps. |
 | Timeout | `timeout` | int | no | Step timeout in seconds. Behavior depends on the step type (e.g., k8s_job watch timeout). |
@@ -377,6 +377,7 @@ These are the built-in step types available in every workflow file.
 | `http_request` | Make an HTTP request. |
 | `shell_exec` | Execute a shell command on the local machine. |
 | `script_exec` | Run an inline script or a script from the workflow `scripts/` directory on the local machine. |
+| `write_file` | Write content to a file on the runner, creating parent directories. |
 | `claude` | Run the Claude Code CLI with a prompt or skill, streaming its output with enforced turn, token, and duration limits. |
 | `ansible_playbook` | Run `ansible-playbook` with an inventory, extra vars, and CLI options. |
 | `ansible` | Run an ad-hoc `ansible` module against a host pattern. |

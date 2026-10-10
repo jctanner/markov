@@ -120,6 +120,11 @@ func parse(data []byte, scriptDir string) (*WorkflowFile, error) {
 	return &wf, nil
 }
 
+// IsTemplated reports whether a value contains template syntax.
+func IsTemplated(s string) bool {
+	return strings.Contains(s, "{{") || strings.Contains(s, "{%")
+}
+
 func readYAML(path string, out any) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -333,7 +338,8 @@ func validateSteps(wf *WorkflowFile, workflowName, section string, steps []Step,
 		stepNames[s.Name] = true
 
 		if s.Workflow != "" {
-			if !hasWorkflow(wf, s.Workflow) {
+			// A templated name is resolved when the step runs.
+			if !IsTemplated(s.Workflow) && !hasWorkflow(wf, s.Workflow) {
 				return fmt.Errorf("workflow %q, step %q: references unknown workflow %q", workflowName, s.Name, s.Workflow)
 			}
 		} else if s.Type == "" {
@@ -381,6 +387,7 @@ var primitives = map[string]bool{
 	"llm_invoke":       true,
 	"shell_exec":       true,
 	"script_exec":      true,
+	"write_file":       true,
 	"claude":           true,
 	"ansible":          true,
 	"ansible_playbook": true,

@@ -55,6 +55,16 @@ This means `--var run_pipeline=false` correctly skips a step guarded by
 `when: "run_pipeline"`; the non-empty string `"false"` is not placed in the
 context.
 
+A value that is all digits is read as a number, so quote-free commit hashes
+that happen to contain no letters arrive as integers. Compare with care, or
+pass such values through a workflow var set in YAML.
+
+### Built-in variables
+
+| Variable | Value |
+|---|---|
+| `markov_run_id` | The run's ID. It is saved with the run, so a resumed run sees the same value, and sub-workflows inherit it. Use it for unique output paths, such as `/results/{{ markov_run_id }}/summary.md`. |
+
 ## Setting Variables at Runtime
 
 There are three mechanisms for setting context variables during execution.
