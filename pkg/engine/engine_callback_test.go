@@ -867,3 +867,38 @@ func TestCallbackStepProgress(t *testing.T) {
 		t.Errorf("progress kinds = %s", got)
 	}
 }
+
+func TestCallbackJobCreatedForK8sJobWait(t *testing.T) {
+	wfFile := &parser.WorkflowFile{
+		Entrypoint: "main",
+		Namespace:  "ai-pipeline",
+		Workflows: []parser.Workflow{{
+			Name: "main",
+			Steps: []parser.Step{
+				{Name: "wait", Type: "k8s_job_wait", Params: map[string]any{"job_name": "{{ job }}"}},
+			},
+		}},
+		Vars: map[string]any{"job": "dashboard-job-1"},
+	}
+	eng, cb := newTestEngine(t, wfFile, map[string]executor.Executor{"k8s_job_wait": &recordExec{}})
+	if _, err := eng.Run(context.Background(), "main", nil); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	created, completed := -1, -1
+	for i, ev := range cb.all {
+		switch e := ev.(type) {
+		case callback.JobCreatedEvent:
+			if e.JobName != "dashboard-job-1" || e.Namespace != "ai-pipeline" || e.StepName != "wait" || e.PodSelector != "job-name=dashboard-job-1" {
+				t.Fatalf("job_created = %#v", e)
+			}
+			created = i
+		case callback.StepCompletedEvent:
+			completed = i
+		}
+	}
+	if created < 0 || created > completed {
+		t.Fatalf("job_created at %d, step_completed at %d: want job_created first", created, completed)
+	}
+}

@@ -955,6 +955,28 @@ func (e *Engine) executeStepCore(ctx context.Context, runID string, workflowName
 		})
 		defer k8sExec.SetOnJobCreated(nil)
 	}
+	// k8s_job_wait watches a Job something else created. Report it the same way as soon as the
+	// watch starts, so callback consumers (markovd's live log view) can follow the Job while it
+	// runs instead of only seeing its name in the output when it finishes.
+	if base == "k8s_job_wait" {
+		if jobName, _ := renderedParams["job_name"].(string); jobName != "" {
+			namespace, _ := renderedParams["namespace"].(string)
+			if namespace == "" {
+				namespace = e.file.Namespace
+			}
+			e.fireEvent(func(cb callback.Callback) error {
+				return cb.OnJobCreated(callback.JobCreatedEvent{
+					EventHeader:  callback.EventHeader{Timestamp: time.Now(), RunID: runID, EventType: "job_created"},
+					WorkflowName: workflowName,
+					StepName:     step.Name,
+					StepType:     step.Type,
+					JobName:      jobName,
+					Namespace:    namespace,
+					PodSelector:  fmt.Sprintf("job-name=%s", jobName),
+				})
+			})
+		}
+	}
 
 	execCtx = executor.WithProgress(execCtx, func(kind string, data map[string]any) {
 		e.fireEvent(func(cb callback.Callback) error {

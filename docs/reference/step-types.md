@@ -657,6 +657,10 @@ Submit a Job through an external dashboard API, then wait on the Kubernetes Job 
   register: watched_job
 ```
 
+When the watch starts, the step emits the same `job_created` callback event as `k8s_job`, with
+the watched Job's name and namespace, so consumers such as markovd can follow its log while it
+runs.
+
 A failed Job fails the step. To record it and carry on (for example, when a failed Job is a
 result to report rather than a reason to stop), set `ignore_errors`; the registered output then
 has `status: failed`, the logs, `failed: true` and `error`:

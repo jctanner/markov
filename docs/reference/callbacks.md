@@ -131,7 +131,7 @@ Debug events are informational and are not stored in the state store.
 
 | Event Type | When Fired | Key Fields |
 |------------|------------|------------|
-| `job_created` | K8s Job resource created | `workflow_name`, `step_name`, `step_type`, `job_name`, `namespace`, `pod_selector` |
+| `job_created` | K8s Job resource created | `workflow_name`, `step_name`, `step_type`, `job_name`, `namespace`, `pod_selector` Also emitted by `k8s_job_wait` when it starts watching an existing Job. |
 
 ### Gate events
 
