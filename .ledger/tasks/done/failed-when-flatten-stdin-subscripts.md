@@ -25,6 +25,16 @@ checks again after taking the slot, using an atomic flag set with the first
 error. Found by Breadboard's `var/demos/markov-feature-check`. Test:
 `TestForEachStopsAfterAFailureWithConcurrencyOne`.
 
+## Found running it through markovd
+
+- **`markov resume`** rejected `--verbose`, `--namespace`, `--kubeconfig`,
+  `--forks` and `--debug`, and never set up the engine's Kubernetes client.
+  It now takes the same execution flags as `run` (`3520707`; `cli.md`
+  updated).
+- **Numbers after a resume:** saved state was decoded with `json.Unmarshal`,
+  so whole numbers came back as float64 and printed as `2.000000`. They are
+  now restored as int (`88190a4`, `TestResumeKeepsWholeNumbersAsInts`).
+
 ## Docs
 
 - `workflow-file.md`: the `failed_when` step field.
