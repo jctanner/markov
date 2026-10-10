@@ -128,6 +128,12 @@ func main() {
 	}
 	addStateStoreFlag(resumeCmd, stateStorePath)
 	resumeCmd.Flags().StringArrayVar(&flagVars, "var", nil, "Override vars before resuming (required for paused runs; key=value, repeatable)")
+	// The same execution settings as run, so a resumed run behaves like the original.
+	resumeCmd.Flags().StringVar(&flagNamespace, "namespace", "", "Override K8s namespace")
+	resumeCmd.Flags().StringVar(&flagKubeconfig, "kubeconfig", "", "K8s config path")
+	resumeCmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Show detailed execution output")
+	resumeCmd.Flags().BoolVar(&flagDebug, "debug", false, "Show debug logging for flag parsing, callback setup, and K8s client init")
+	resumeCmd.Flags().IntVar(&flagForks, "forks", 0, "Override global forks")
 	resumeCmd.Flags().StringVar(&flagSourceIntegrity, "source-integrity", "warn", "Source drift policy: warn, strict, or off")
 	resumeCmd.Flags().StringArrayVar(&flagRewind, "rewind", nil, `Re-run from a step of the entrypoint workflow, as JSON, e.g. {"workflow":"main","step":"build"} (repeatable; the earliest wins)`)
 	resumeCmd.Flags().BoolVar(&flagRewindChanged, "rewind-changed", false, "Re-run from the earliest completed step whose definition changed since it ran")
@@ -366,6 +372,12 @@ func resumeWorkflow(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if flagForks > 0 {
+		wfFile.Forks = flagForks
+	}
+	if flagNamespace != "" {
+		wfFile.Namespace = flagNamespace
+	}
 
 	executors, err := buildExecutors(wfFile)
 	if err != nil {
@@ -373,7 +385,13 @@ func resumeWorkflow(cmd *cobra.Command, args []string) error {
 	}
 
 	eng := engine.New(wfFile, store, executors)
+	eng.Verbose = flagVerbose
 	eng.SourcePath = run.WorkflowFile
+	if k8sClient, restCfg, err := getK8sClient(); err == nil {
+		eng.SetK8sClient(k8sClient, restCfg)
+	} else {
+		debugLog("k8s client: unavailable: %v", err)
+	}
 	eng.SourceIntegrityMode = mode
 	configureSourceIdentity(eng)
 	for _, raw := range flagRewind {

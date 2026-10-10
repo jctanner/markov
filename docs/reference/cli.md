@@ -107,6 +107,7 @@ markov resume <run_id> [flags]
 | `--source-integrity mode` | `warn`, `strict`, or `off` | `warn` | How to handle a workflow source-tree digest mismatch. `warn` resumes and records drift; `strict` rejects the resume; `off` skips the comparison. |
 | `--rewind json` | string (repeatable) | -- | Re-run from a step of the entrypoint workflow, e.g. `{"workflow":"main","step":"build"}`. That step and every later one run again; the earliest target wins. A completed run can be rewound. See [Edited steps and rewinding](state-store.md#edited-steps-and-rewinding). |
 | `--rewind-changed` | bool | `false` | Re-run from the earliest completed step whose definition changed since it ran. |
+| `--namespace`, `--kubeconfig`, `--forks`, `--verbose`, `--debug` | | | The same execution settings as `markov run`. They aren't stored with the run, so pass the original run's `--namespace` or `--forks` again if it used them. |
 | `--callback`, `--callback-header`, `--callback-tls-insecure`, `--callback-tls-cert`, `--callback-buffer-size` | | | The same event callbacks as `markov run`; the resumed run emits `run_resumed` first. |
 | `--control`, `--breakpoint`, `--breakpoints-file`, `--break`, `--step` | | | The same [debugger](debugging.md) flags as `markov run`, so a resumed run can be stepped through. |
 
