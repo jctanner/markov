@@ -623,3 +623,48 @@ func writeFile(t *testing.T, path string, content string) {
 		t.Fatal(err)
 	}
 }
+
+func TestParseDirMergesVarsDirectory(t *testing.T) {
+	dir := makeDirectoryWorkflow(t)
+	writeFile(t, filepath.Join(dir, "vars.yaml"), "tier: smoke\n")
+	varsDir := filepath.Join(dir, "vars")
+	if err := os.MkdirAll(varsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(varsDir, "tiers.yaml"), "tiers:\n  smoke:\n    repeats: 3\n")
+	writeFile(t, filepath.Join(varsDir, "variants.yaml"), "variants: {haiku: {model: m}}\n")
+
+	wf, err := ParseFile(dir)
+	if err != nil {
+		t.Fatalf("ParseFile(directory) error = %v", err)
+	}
+	for _, name := range []string{"tier", "tiers", "variants"} {
+		if _, ok := wf.Vars[name]; !ok {
+			t.Fatalf("var %q missing: %#v", name, wf.Vars)
+		}
+	}
+
+	writeFile(t, filepath.Join(varsDir, "more.yaml"), "tier: other\n")
+	if _, err := ParseFile(dir); err == nil || !strings.Contains(err.Error(), `duplicate variable "tier"`) {
+		t.Fatalf("duplicate variable error = %v", err)
+	}
+}
+
+func TestParseRejectsForEachWhenWithoutForEach(t *testing.T) {
+	_, err := Parse([]byte(`
+entrypoint: main
+workflows:
+  - name: main
+    steps:
+      - name: a
+        type: shell_exec
+        description: "Long-form notes about the step."
+        ignore_errors: true
+        for_each_when: "x"
+        params:
+          command: "true"
+`))
+	if err == nil || !strings.Contains(err.Error(), "for_each_when requires for_each") {
+		t.Fatalf("error = %v", err)
+	}
+}

@@ -22,6 +22,11 @@ also_works: "{{ items[0] }}"
 | `{{ variable }}` | Substitute a simple value from context |
 | `{{ variable.field }}` | Access a nested map field |
 | `{{ array.0 }}` or `{{ array[0] }}` | Access an array element by index |
+| `{{ map[key] }}` | Look up a map entry by a variable key (no further `.field` after the brackets; bind it with `set_fact` first) |
+
+Values are inserted as they are. Markov turns off Pongo2's HTML autoescaping, because templates
+render shell commands, script arguments, JSON bodies and paths, where `&quot;` would corrupt the
+value.
 
 ## Filters
 
@@ -57,6 +62,25 @@ Removes leading and trailing whitespace from a value.
   type: set_fact
   vars:
     issue_key: "{{ command_result.stdout | trim }}"
+```
+
+### `csv`
+
+Turns comma-separated text into a list, trimming each item and dropping empty ones. An empty
+string gives an empty list, so `default` can supply a fallback. Pongo2's own `split` filter keeps
+spaces and empty items.
+
+```yaml
+for_each: "only_tests | csv"                 # "S1, S2" -> ["S1", "S2"]
+for_each: "variants | csv | default:own"     # "" -> own
+```
+
+### `seq`
+
+Turns a count into the list `1..n`. A numeric string is parsed; an empty value gives an empty list.
+
+```yaml
+for_each: "repeats | seq"                    # 3 -> [1, 2, 3]
 ```
 
 ### `from_json` / `fromjson`
@@ -102,6 +126,18 @@ params:
 ```
 
 If `config` is a map or list, the rendered parameter remains a map or list. If `config` is a JSON-looking string beginning with `{` or `[`, Markov parses it into the corresponding native value. This is useful for HTTP request bodies, where the executor JSON-encodes the final body.
+
+Any other expression in that position also keeps its native type: filters, arithmetic and
+variable-key lookups. For example:
+
+```yaml
+vars:
+  tier_def: "{{ tiers[tier] }}"                      # the map, not its printed form
+  names: "{{ variants | csv | default:own_names }}"  # a list
+  next: "{{ round + 1 }}"                            # an integer
+```
+
+An expression that is undefined still renders as the empty string.
 
 This exact-expression path is triggered only when the whole string is the expression, with no surrounding text. Mixed templates still render to strings:
 

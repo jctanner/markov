@@ -97,3 +97,23 @@ func TestScriptExecReturnsOutputOnScriptFailure(t *testing.T) {
 		t.Fatalf("stderr = %q, want failed newline", got)
 	}
 }
+
+func TestScriptExecAcceptsScalarArgsAndEnv(t *testing.T) {
+	result, err := NewScriptExec().Execute(context.Background(), map[string]any{
+		"interpreter": "sh",
+		"content":     "printf '%s %s %s' \"$1\" \"$2\" \"$N\"",
+		"args":        []any{3, true},
+		"env":         map[string]any{"N": 1.5},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got, want := result.Output["stdout"], "3 true 1.5"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+	if _, err := NewScriptExec().Execute(context.Background(), map[string]any{
+		"interpreter": "sh", "content": "true", "args": []any{map[string]any{}},
+	}); err == nil {
+		t.Fatal("a map argument should be rejected")
+	}
+}

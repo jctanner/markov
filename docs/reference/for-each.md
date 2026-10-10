@@ -12,6 +12,7 @@ Iterates over a list, running a step or sub-workflow per item with concurrency c
 | `for_each_key` | string | No | Field name on items used as stable iteration keys |
 | `for_each_sort` | string | No | Field to sort items by (string comparison, ascending) |
 | `concurrency` | int | No | Override global forks for this step |
+| `for_each_when` | string | No | Per-item filter, evaluated with the item bound to `as`; false skips the item |
 
 ## List resolution
 
@@ -19,8 +20,9 @@ The `for_each` expression is resolved in the following order:
 
 1. **Dot-path context lookup** -- the expression is split on `.` and walked through the context map (e.g., `"items"` looks up `ctx["items"]`, `"fetch.results"` looks up `ctx["fetch"]["results"]`).
 2. **Type coercion** -- `[]any` is used directly; `[]string` is converted to `[]any`.
-3. **Template fallback** -- if the lookup returns nil, the expression is rendered as a Go template (`{{ expr }}`) and the result is JSON-parsed into a list.
-4. **Error** -- if none of the above produce a list, the step fails with `for_each expression "..." did not resolve to a list`.
+3. **Expression** -- otherwise the expression is evaluated as a template expression and its native value is used if it is a list, so filters work: `repeats | seq`, `only_tests | csv`, `variants | csv | default:own`.
+4. **Template fallback** -- if the lookup returns nil, the expression is rendered as a Go template (`{{ expr }}`) and the result is JSON-parsed into a list.
+5. **Error** -- if none of the above produce a list, the step fails with `for_each expression "..." did not resolve to a list`.
 
 ```yaml
 # Direct context lookup
@@ -45,7 +47,7 @@ When `workflow` is set alongside `for_each`, each item spawns a sub-workflow wit
 ```
 
 - `key` is the array index by default, or the `for_each_key` field value if set.
-- The sub-workflow receives a **copy** of the parent context, merged with the workflow's own vars, then the step's rendered vars.
+- The sub-workflow receives a **copy** of the parent context, merged with the workflow's own vars, then the current item under its `as` name, then the step's rendered vars.
 - Each sub-run is tracked in the state store with `parent_run_id`, `parent_step`, and `for_each_key`.
 
 ```yaml
@@ -163,6 +165,24 @@ steps:
 | New items | Not started after first error (loop breaks) |
 | Step status | Marked failed with the first error |
 | Registered results | Still collected from all iterations that ran |
+
+With `ignore_errors: true` on the `for_each` step, a failed item doesn't stop the loop: every
+item runs, failed items' registered contexts get `failed: true` and `error`, and the step
+succeeds.
+
+## for_each_when
+
+Filters items one at a time. The expression sees the item under its `as` name; items where it is
+false are skipped and logged. Use it instead of `when`, which is evaluated once for the whole step.
+
+```yaml
+- name: tests
+  for_each: tier_def.tests
+  as: test
+  for_each_key: id
+  for_each_when: "not only_tests or test.id in only_tests | csv"
+  workflow: run-test
+```
 
 ## Resume behavior
 

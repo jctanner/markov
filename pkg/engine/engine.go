@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -964,11 +965,17 @@ func (e *Engine) executeStepCore(ctx context.Context, runID string, workflowName
 	})
 
 	result, err := exec.Execute(execCtx, renderedParams)
-	if err != nil {
-		return e.failStep(ctx, runID, workflowName, stateStepName, base, now, err)
+	var output map[string]any
+	if result != nil {
+		output = result.Output
 	}
-
-	output := result.Output
+	if err != nil {
+		if !step.IgnoreErrors {
+			return e.failStep(ctx, runID, workflowName, stateStepName, base, now, err)
+		}
+		output = ignoredFailure(output, err)
+		log.Printf("[run:%s] step %q failed, ignored (ignore_errors): %v", runID, step.Name, err)
+	}
 	if step.Register != "" {
 		runCtx[step.Register] = output
 		e.verbose("[run:%s]   registered %q: %v", runID, step.Register, output)
@@ -1112,7 +1119,14 @@ func (e *Engine) executeSubWorkflow(ctx context.Context, runID string, workflowN
 				Duration:     duration,
 			})
 		})
-		return err
+		if !step.IgnoreErrors {
+			return err
+		}
+		log.Printf("[run:%s] sub-workflow %q failed, ignored (ignore_errors): %v", runID, step.Workflow, err)
+		if step.Register != "" {
+			runCtx[step.Register] = ignoredFailure(subVars, err)
+		}
+		return nil
 	}
 	subRun.CompletedAt = &subNow
 	subRun.Status = state.RunCompleted
@@ -1190,6 +1204,23 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 			break
 		}
 
+		if step.ForEachWhen != "" {
+			whenCtx := make(map[string]any, len(runCtx)+1)
+			for k, v := range runCtx {
+				whenCtx[k] = v
+			}
+			whenCtx[step.As] = item
+			ok, err := e.tmpl.EvalBool(step.ForEachWhen, whenCtx)
+			if err != nil {
+				errOnce.Do(func() { firstErr = fmt.Errorf("evaluating for_each_when for item %d: %w", i, err) })
+				break
+			}
+			if !ok {
+				log.Printf("[run:%s] for_each %q: skipping item %d (for_each_when: %q is false)", runID, step.Name, i, step.ForEachWhen)
+				continue
+			}
+		}
+
 		sem <- struct{}{}
 		wg.Add(1)
 
@@ -1217,6 +1248,7 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 				for k, v := range wf.Vars {
 					subVars[k] = v
 				}
+				subVars[step.As] = itemVal
 				if step.Vars != nil {
 					rendered, err := e.tmpl.RenderMap(step.Vars, itemCtx)
 					if err != nil {
@@ -1283,7 +1315,12 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 				} else if err != nil {
 					subRun.CompletedAt = &feNow
 					subRun.Status = state.RunFailed
-					errOnce.Do(func() { firstErr = err })
+					if step.IgnoreErrors {
+						log.Printf("[run:%s] for_each %q item %s failed, ignored (ignore_errors): %v", runID, step.Name, forEachKey, err)
+						subVars = ignoredFailure(subVars, err)
+					} else {
+						errOnce.Do(func() { firstErr = err })
+					}
 					e.fireEvent(func(cb callback.Callback) error {
 						return cb.OnSubRunFailed(callback.SubRunFailedEvent{
 							EventHeader:  callback.EventHeader{Timestamp: feNow, RunID: subRunID, EventType: "sub_run_failed"},
@@ -1327,8 +1364,11 @@ func (e *Engine) executeForEach(ctx context.Context, runID string, workflowName 
 
 				err := e.executeStepWithStateName(ctx, runID, workflowName, subStep, stateStepName, itemCtx)
 				if err != nil {
-					errOnce.Do(func() { firstErr = err })
-					return
+					if !step.IgnoreErrors || IsPaused(err) {
+						errOnce.Do(func() { firstErr = err })
+						return
+					}
+					itemCtx = ignoredFailure(itemCtx, err)
 				}
 
 				mu.Lock()
@@ -1366,6 +1406,14 @@ func (e *Engine) resolveForEachList(expr string, ctx map[string]any) ([]any, err
 		}
 	}
 
+	native, err := e.tmpl.Eval(expr, ctx)
+	if err != nil {
+		return nil, err
+	}
+	if list, ok := asList(native); ok {
+		return list, nil
+	}
+
 	rendered, err := e.tmpl.Render("{{ "+expr+" }}", ctx)
 	if err != nil {
 		return nil, err
@@ -1376,6 +1424,34 @@ func (e *Engine) resolveForEachList(expr string, ctx map[string]any) ([]any, err
 		return nil, fmt.Errorf("for_each expression %q did not resolve to a list", expr)
 	}
 	return list, nil
+}
+
+// asList accepts any slice value, such as the []any or []string a filter returns.
+func asList(value any) ([]any, bool) {
+	if list, ok := value.([]any); ok {
+		return list, true
+	}
+	v := reflect.ValueOf(value)
+	if !v.IsValid() || v.Kind() != reflect.Slice {
+		return nil, false
+	}
+	list := make([]any, v.Len())
+	for i := range list {
+		list[i] = v.Index(i).Interface()
+	}
+	return list, true
+}
+
+// ignoredFailure marks a step's output as failed for a step with ignore_errors, keeping
+// whatever output the step produced.
+func ignoredFailure(output map[string]any, err error) map[string]any {
+	marked := make(map[string]any, len(output)+2)
+	for k, v := range output {
+		marked[k] = v
+	}
+	marked["failed"] = true
+	marked["error"] = err.Error()
+	return marked
 }
 
 func resolveContextPath(path string, ctx map[string]any) any {

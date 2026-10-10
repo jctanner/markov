@@ -45,15 +45,20 @@ type Workflow struct {
 }
 
 type Step struct {
-	Name        string              `yaml:"name"`
-	Type        string              `yaml:"type"`
-	Params      map[string]any      `yaml:"params"`
-	When        string              `yaml:"when"`
-	Register    string              `yaml:"register"`
-	Timeout     int                 `yaml:"timeout"`
-	ForEach     string              `yaml:"for_each"`
-	ForEachKey  string              `yaml:"for_each_key"`
-	ForEachSort string              `yaml:"for_each_sort"`
+	Name string `yaml:"name"`
+	// Description is free text for readers and tools; it does not change what the step does.
+	Description string         `yaml:"description"`
+	Type        string         `yaml:"type"`
+	Params      map[string]any `yaml:"params"`
+	When        string         `yaml:"when"`
+	Register    string         `yaml:"register"`
+	Timeout     int            `yaml:"timeout"`
+	ForEach     string         `yaml:"for_each"`
+	ForEachKey  string         `yaml:"for_each_key"`
+	ForEachSort string         `yaml:"for_each_sort"`
+	// ForEachWhen is evaluated per item, with the item bound to `as`; items where it is false
+	// are skipped. `when` is evaluated once, before the loop.
+	ForEachWhen string              `yaml:"for_each_when"`
 	As          string              `yaml:"as"`
 	Concurrency int                 `yaml:"concurrency"`
 	Workflow    string              `yaml:"workflow"`
@@ -63,6 +68,8 @@ type Step struct {
 	Msg         string              `yaml:"msg"`
 	Rules       []string            `yaml:"rules"`
 	Facts       map[string]any      `yaml:"facts"`
+	// IgnoreErrors records a failure in the step's output (failed: true, error) and carries on.
+	IgnoreErrors bool `yaml:"ignore_errors"`
 }
 
 type Artifact struct {

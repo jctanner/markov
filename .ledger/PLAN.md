@@ -19,6 +19,7 @@
 
 ## Completed Tasks
 
+- [Language additions for data-driven benchmark workflows](tasks/done/workflow-language-flow-controls.md)
 - [First-class Jev support](tasks/done/jev-support.md)
 - [Make all current examples validate](tasks/done/validate-all-examples.md)
 - [Add strict YAML validation](tasks/done/strict-yaml-validation.md)

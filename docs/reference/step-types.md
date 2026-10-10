@@ -90,8 +90,8 @@ Provide exactly one script source:
 | `interpreter` | string | yes | Interpreter executable, such as `python3`, `bash`, or `sh`. |
 | `content` | string | one of `content`/`path` | Inline script body. |
 | `path` | string | one of `content`/`path` | Script path relative to the workflow `scripts/` directory. |
-| `args` | string[] | no | Arguments passed to the script after its path. |
-| `env` | map[string]string | no | Environment variables added to or overriding the runner environment. |
+| `args` | list | no | Arguments passed to the script after its path. Strings, numbers and booleans; numbers and booleans are passed as their text (`3`, `true`). |
+| `env` | map | no | Environment variables added to or overriding the runner environment. Values as for `args`. |
 
 ### Output Variables
 
@@ -612,6 +612,19 @@ Submit a Job through an external dashboard API, then wait on the Kubernetes Job 
     job_name: "{{ submitted_job.body.job_name }}"
     timeout: 3600
     tail_logs: true
+  register: watched_job
+```
+
+A failed Job fails the step. To record it and carry on (for example, when a failed Job is a
+result to report rather than a reason to stop), set `ignore_errors`; the registered output then
+has `status: failed`, the logs, `failed: true` and `error`:
+
+```yaml
+- name: wait_for_run
+  type: k8s_job_wait
+  ignore_errors: true
+  params:
+    job_name: "{{ submitted_job.body.job_name }}"
   register: watched_job
 ```
 

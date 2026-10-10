@@ -3,12 +3,22 @@ package template
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/flosch/pongo2/v6"
 )
 
 func init() {
+	// Workflows render shell commands, script arguments, JSON bodies and file paths, never
+	// HTML, so values are inserted as they are.
+	pongo2.SetAutoescape(false)
+
+	pongo2.RegisterFilter(captureFilter, filterCapture)
+	pongo2.RegisterFilter("csv", filterCSV)
+	pongo2.RegisterFilter("seq", filterSeq)
 	pongo2.RegisterFilter("fromjson", filterFromJSON)
 	pongo2.RegisterFilter("from_json", filterFromJSON)
 	pongo2.RegisterFilter("trim", filterTrim)
@@ -41,6 +51,78 @@ func filterToJSON(in *pongo2.Value, param *pongo2.Value) (*pongo2.Value, *pongo2
 		}
 	}
 	return pongo2.AsSafeValue(string(data)), nil
+}
+
+// filterCSV turns comma-separated text into a list, trimming each item and dropping empty ones,
+// so "" gives an empty list: `{{ "S1, S2" | csv }}` is ["S1", "S2"]. (pongo2's own `split` keeps
+// empty items and spaces.)
+func filterCSV(in *pongo2.Value, param *pongo2.Value) (*pongo2.Value, *pongo2.Error) {
+	items := []any{}
+	for _, item := range strings.Split(in.String(), ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			items = append(items, item)
+		}
+	}
+	return pongo2.AsValue(items), nil
+}
+
+// filterSeq turns a count into the list 1..n: `{{ 3 | seq }}` is [1, 2, 3]. A string count is
+// parsed; an empty one gives an empty list.
+func filterSeq(in *pongo2.Value, param *pongo2.Value) (*pongo2.Value, *pongo2.Error) {
+	n := 0
+	switch {
+	case in.IsInteger(), in.IsFloat():
+		n = in.Integer()
+	case strings.TrimSpace(in.String()) != "":
+		parsed, err := strconv.Atoi(strings.TrimSpace(in.String()))
+		if err != nil {
+			return nil, &pongo2.Error{Sender: "filter:seq", OrigError: fmt.Errorf("not a count: %q", in.String())}
+		}
+		n = parsed
+	}
+	out := make([]any, 0, max(n, 0))
+	for i := 1; i <= n; i++ {
+		out = append(out, i)
+	}
+	return pongo2.AsValue(out), nil
+}
+
+// Native evaluation: an exact `{{ expr }}` value should keep the type the expression produces
+// (a list from `split`, a map from `tiers[tier]`), not its printed form. pongo2 only prints, so
+// the expression is bound with {% with %} and passed to a capture filter that stores the value
+// under a per-call token.
+const captureFilter = "markov_native_capture"
+
+var (
+	captured   sync.Map
+	captureSeq atomic.Uint64
+)
+
+func filterCapture(in *pongo2.Value, param *pongo2.Value) (*pongo2.Value, *pongo2.Error) {
+	captured.Store(param.String(), in.Interface())
+	return pongo2.AsValue(""), nil
+}
+
+// evalNative evaluates a template expression and returns its value. ok is false when the
+// expression is undefined (nil), so the caller keeps rendering it as text.
+func (e *Engine) evalNative(expr string, ctx map[string]any) (any, bool, error) {
+	token := strconv.FormatUint(captureSeq.Add(1), 10)
+	defer captured.Delete(token)
+	tmpl := fmt.Sprintf("{%% with markov_native_value=%s %%}{{ markov_native_value|%s:\"%s\" }}{%% endwith %%}", expr, captureFilter, token)
+	if _, err := e.Render(tmpl, ctx); err != nil {
+		return nil, false, err
+	}
+	value, ok := captured.Load(token)
+	if !ok || value == nil {
+		return nil, false, nil
+	}
+	return value, true, nil
+}
+
+// Eval evaluates an expression (without braces) to its native value; undefined gives nil.
+func (e *Engine) Eval(expr string, ctx map[string]any) (any, error) {
+	value, _, err := e.evalNative(expr, ctx)
+	return value, err
 }
 
 type Engine struct{}
@@ -94,6 +176,11 @@ func (e *Engine) renderValue(v any, ctx map[string]any) (any, error) {
 		}
 		if rendered, ok, err := e.renderNativeExpression(val, ctx); ok || err != nil {
 			return rendered, err
+		}
+		if expr, ok := exactExpression(val); ok {
+			if value, ok, err := e.evalNative(expr, ctx); ok || err != nil {
+				return value, err
+			}
 		}
 		return e.Render(val, ctx)
 	case map[string]any:

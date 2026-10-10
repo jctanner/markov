@@ -36,8 +36,10 @@ type ChangedStep struct {
 }
 
 // definitionHash fingerprints everything that defines what a step does: its parsed fields and
-// the custom step type it resolves to.
+// the custom step type it resolves to. The description is documentation, so editing it does not
+// count as a change.
 func (e *Engine) definitionHash(step parser.Step) string {
+	step.Description = ""
 	payload := struct {
 		Step parser.Step
 		Type *parser.StepType

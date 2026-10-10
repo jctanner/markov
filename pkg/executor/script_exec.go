@@ -138,9 +138,9 @@ func stringSliceParam(params map[string]any, name string) ([]string, error) {
 	case []any:
 		result := make([]string, len(values))
 		for i, value := range values {
-			stringValue, ok := value.(string)
+			stringValue, ok := scalarString(value)
 			if !ok {
-				return nil, fmt.Errorf("script_exec: args[%d] must be a string", i)
+				return nil, fmt.Errorf("script_exec: args[%d] must be a string, number or boolean", i)
 			}
 			result[i] = stringValue
 		}
@@ -180,6 +180,19 @@ func scriptEnv(params map[string]any) ([]string, error) {
 	return env, nil
 }
 
+// scalarString accepts a string, number or boolean. Templated values and --var overrides can
+// arrive typed (`{{ repeats }}` renders as 3), and a process argument is text either way.
+func scalarString(value any) (string, bool) {
+	switch v := value.(type) {
+	case string:
+		return v, true
+	case bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+		return fmt.Sprint(v), true
+	default:
+		return "", false
+	}
+}
+
 func stringMapParam(raw any) (map[string]string, bool) {
 	switch values := raw.(type) {
 	case map[string]string:
@@ -187,7 +200,7 @@ func stringMapParam(raw any) (map[string]string, bool) {
 	case map[string]any:
 		result := make(map[string]string, len(values))
 		for key, value := range values {
-			stringValue, ok := value.(string)
+			stringValue, ok := scalarString(value)
 			if !ok {
 				return nil, false
 			}

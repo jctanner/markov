@@ -62,6 +62,7 @@ The files map directly to the single-file schema:
 |------|------------|-------------|
 | `meta.yaml` | map | `entrypoint`, `namespace`, and `forks` |
 | `vars.yaml` | map | Top-level variables, without a wrapping `vars:` key |
+| `vars/*.yaml` | map | Optional. More variables, merged in filename order after `vars.yaml`; a variable may be defined only once |
 | `rules.yaml` | list | Rule definitions, without a wrapping `rules:` key |
 | `step_types.yaml` | map | Step type definitions, without a wrapping `step_types:` key |
 | `step_types/*.yaml` | map | Additional step type definition maps, merged by filename |
@@ -195,10 +196,13 @@ A step is the unit of execution within a workflow. Each step either runs a primi
 | ForEachSort | `for_each_sort` | string | no | Field name to sort items by before iteration begins. Provides predictable execution order. |
 | As | `as` | string | conditional | Variable name for the current iteration item. Required when `for_each` is set. |
 | Concurrency | `concurrency` | int | no | Override the global `forks` value for this specific `for_each` step. |
+| ForEachWhen | `for_each_when` | string | no | Expression evaluated per item, with the item bound to `as`. Items where it is false are skipped. Requires `for_each`. (`when` is evaluated once, before the loop.) |
 | That | `that` | string[] | no | List of assertion expressions. Used with `type: assert`. All must evaluate to true or the step fails. |
 | Msg | `msg` | string | no | Custom failure message for `assert` steps. Displayed when any assertion in `that` fails. |
 | Rules | `rules` | string[] | no | List of rule names to evaluate. Used with `type: gate`. Must reference rules defined in the top-level `rules` block. |
 | Facts | `facts` | map[string]any | no | Additional facts to inject into the rule evaluation context for `gate` steps. Use this to pass step results or computed values into rules. |
+| Description | `description` | string | no | Free text for readers and tools (long-form notes on what the step is for). It does not change what the step does, and editing it does not count as a step change on resume. |
+| IgnoreErrors | `ignore_errors` | bool | no | When the step fails, record the failure and carry on. The registered output keeps whatever the step produced, plus `failed: true` and `error`. On a sub-workflow, the registered context gets the same two keys; on `for_each`, failed items are marked that way and the loop runs every item. Errors in the workflow itself, such as a template that doesn't parse, still fail the step. |
 
 ```yaml
 steps:

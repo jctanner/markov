@@ -44,8 +44,8 @@ func ParseDir(path string) (*WorkflowFile, error) {
 	wf.Namespace = meta.Namespace
 	wf.Forks = meta.Forks
 
-	var vars map[string]any
-	if err := readYAML(filepath.Join(path, "vars.yaml"), &vars); err != nil {
+	vars, err := readVars(path)
+	if err != nil {
 		return nil, err
 	}
 	wf.Vars = vars
@@ -140,6 +140,46 @@ func decodeStrict(data []byte, out any) error {
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	return decoder.Decode(out)
+}
+
+// readVars reads vars.yaml and then every vars/*.yaml file in name order. A variable may be
+// defined only once across them.
+func readVars(path string) (map[string]any, error) {
+	vars := map[string]any{}
+	if err := readYAML(filepath.Join(path, "vars.yaml"), &vars); err != nil {
+		return nil, err
+	}
+	if vars == nil {
+		vars = map[string]any{}
+	}
+	dirPath := filepath.Join(path, "vars")
+	entries, err := os.ReadDir(dirPath)
+	if os.IsNotExist(err) {
+		return vars, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading vars directory %q: %w", dirPath, err)
+	}
+	var files []string
+	for _, entry := range entries {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".yaml" {
+			files = append(files, filepath.Join(dirPath, entry.Name()))
+		}
+	}
+	sort.Strings(files)
+	for _, varsPath := range files {
+		var current map[string]any
+		if err := readYAML(varsPath, &current); err != nil {
+			return nil, err
+		}
+		for name, value := range current {
+			if _, ok := vars[name]; ok {
+				return nil, fmt.Errorf("duplicate variable %q in %q", name, varsPath)
+			}
+			vars[name] = value
+		}
+	}
+	return vars, nil
 }
 
 func readStepTypes(path string) (map[string]StepType, error) {
@@ -300,6 +340,9 @@ func validateSteps(wf *WorkflowFile, workflowName, section string, steps []Step,
 			return fmt.Errorf("workflow %q, step %q: must have type or workflow", workflowName, s.Name)
 		}
 
+		if s.ForEachWhen != "" && s.ForEach == "" {
+			return fmt.Errorf("workflow %q, step %q: for_each_when requires for_each", workflowName, s.Name)
+		}
 		if s.ForEach != "" && s.As == "" {
 			return fmt.Errorf("workflow %q, step %q: for_each requires as", workflowName, s.Name)
 		}
