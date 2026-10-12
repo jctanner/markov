@@ -8,6 +8,7 @@
 
 - [Directory Workflow Files Plan](plans/000-directory-workflow-files.md)
 - [Step-Through Debugging and Interactive Workflow Building](plans/001-step-through-debugging.md)
+- [Durable External Tasks and Orchestration Reliability](plans/002-durable-task-orchestration.md) — proposed; implementation not started.
 
 ## Active Tasks
 

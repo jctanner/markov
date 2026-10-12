@@ -85,3 +85,12 @@ Step rows store a hash of their definition; resume reports edited completed step
 ## 2026-10-05 — markov schema
 
 `markov schema` describes the file, workflow and step fields and every built-in step type with its parameters; a test keeps the table in step with the reference docs. See [task](../tasks/done/markov-schema.md).
+
+## 2026-10-11 — Orchestration reliability proposals
+
+Moved the six architecture/language proposals from Breadboard's
+strategy evaluation into [plan 002](../plans/002-durable-task-orchestration.md),
+and added it to the Markov plan index. Priorities are durable external
+task ownership/reconciliation and engine-side output contracts, followed
+by explicit retry policy, durable events, shared budgets and evidence
+preservation. Proposals only; no engine changes, commit or deployment.
